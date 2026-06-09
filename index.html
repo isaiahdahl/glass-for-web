@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glass for Web</title>
+    <style>
+      :root {
+        --bg-page: #f4f3fb;
+        --panel: #ffffff;
+        --panel-border: #ededf4;
+        --primary: #8b7bf6;
+        --track: #ececf3;
+        --text: #2b2b33;
+        --muted: #9b9ba8;
+        --bg-max: #ffffff;
+        --map-bg: rgb(128, 128, 128);
+        --radius: 22px;
+        color-scheme: light;
+      }
+      html.dark, body.dark {
+        --bg-page: #0a0a0a;
+        --panel: #141414;
+        --panel-border: #242424;
+        --primary: #a378ed;
+        --track: #2a2a2a;
+        --text: #e8e8ee;
+        --muted: #7c7c88;
+        --bg-max: #2a2a2a;
+        --map-bg: rgb(96, 96, 96);
+        color-scheme: dark;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg-page);
+        transition: background-color 200ms ease, color 200ms ease;
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+      body { min-height: 100vh; }
+      .wrap {
+        max-width: 980px;
+        margin: 40px auto;
+        padding: 0 20px;
+      }
+      figure { margin: 0; }
+      .playground {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+      }
+      .stage,
+      .mapStage {
+        position: relative;
+        border-radius: var(--radius);
+        overflow: hidden;
+        aspect-ratio: 1.47 / 1;
+        touch-action: none;
+        user-select: none;
+        cursor: grab;
+      }
+      .stage:active,
+      .mapStage:active { cursor: grabbing; }
+      /* left: the refracted background */
+      .stage .glassCanvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      /* the CSS outline / drop-shadow that rides on top of the lens
+         (eu.edgeShadow: "0 0 0 1px var(--bg-max), 0 8px 24px rgba(0,0,0,.4)") */
+      .outline {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        will-change: transform;
+        box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.28);
+      }
+      /* right: the generated displacement map on a neutral 128-grey field */
+      .mapStage { background: var(--map-bg); }
+      .mapBlob {
+        position: absolute;
+        image-rendering: auto;
+        pointer-events: none;
+      }
+      .caption {
+        text-align: center;
+        color: var(--muted);
+        font-size: 15px;
+        margin: 16px 0 26px;
+      }
+      .controls {
+        background: var(--panel);
+        border: 1px solid var(--panel-border);
+        border-radius: var(--radius);
+        padding: 26px 30px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 56px;
+        row-gap: 18px;
+      }
+      .ctl {
+        display: grid;
+        grid-template-columns: 96px 1fr 44px;
+        align-items: center;
+        gap: 14px;
+      }
+      .ctl label { color: var(--muted); font-size: 15px; }
+      .ctl .val {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-size: 15px;
+        color: var(--text);
+      }
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        height: 6px;
+        border-radius: 3px;
+        background: var(--track);
+        outline: none;
+        margin: 0;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--bg-max);
+        border: 1px solid var(--track);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+        cursor: pointer;
+      }
+      input[type="range"]::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--bg-max);
+        border: 1px solid var(--track);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+        cursor: pointer;
+      }
+      h1 { font-size: 19px; font-weight: 600; margin: 0 0 22px; }
+      h1 span { color: var(--muted); font-weight: 400; }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .theme-toggle {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        margin-bottom: 22px;
+      }
+      .theme-toggle:hover { border-color: var(--primary); }
+      .theme-toggle .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--primary);
+      }
+      @media (max-width: 760px) {
+        .playground, .controls { grid-template-columns: 1fr; }
+      }
+
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="topbar">
+        <h1>Glass for Web <span>· procedural refraction playground</span></h1>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode">
+          <span class="dot"></span><span data-theme-label>Dark</span>
+        </button>
+      </div>
+      <figure>
+        <div class="playground">
+          <div class="stage" id="stage">
+            <canvas class="glassCanvas" id="glass"></canvas>
+            <div class="outline" id="outline"></div>
+          </div>
+          <div class="mapStage" id="mapStage">
+            <img class="mapBlob" id="mapBlob" alt="Generated displacement map at the lens position" draggable="false" />
+          </div>
+        </div>
+        <figcaption class="caption">
+          On the left is the refracted result, on the right the map that drives it.
+        </figcaption>
+      </figure>
+      <div class="controls" id="controls"></div>
+
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
