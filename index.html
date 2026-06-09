@@ -64,23 +64,53 @@
       }
       .stage:active,
       .mapStage:active { cursor: grabbing; }
-      /* left: the refracted background */
-      .stage .glassCanvas {
+      /* left: live DOM scene. The lens overlay reuses the same DOM scene and
+         applies an SVG feDisplacementMap filter, matching Aave's live-DOM path. */
+      .svgDefs {
+        position: absolute;
+        width: 0;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .scene,
+      .lensContent {
         position: absolute;
         inset: 0;
-        width: 100%;
-        height: 100%;
-        display: block;
+        overflow: hidden;
+        background-image: var(--scene-image);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
       }
-      /* the CSS outline / drop-shadow that rides on top of the lens
-         (eu.edgeShadow: "0 0 0 1px var(--bg-max), 0 8px 24px rgba(0,0,0,.4)") */
-      .outline {
+      .scene {
+        border-radius: inherit;
+      }
+      .lensLayer,
+      .lensOutline {
         position: absolute;
         top: 0;
         left: 0;
         pointer-events: none;
         will-change: transform;
+      }
+      .lensLayer {
+        overflow: hidden;
+        will-change: transform, filter;
+      }
+      .lensOutline {
         box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.28);
+      }
+      .lensContent {
+        border-radius: inherit;
+        transform-origin: top left;
+      }
+      .frostVeil {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        border-radius: inherit;
+        background: color-mix(in srgb, var(--frost-color) calc(var(--frost-alpha) * 100%), transparent);
       }
       /* right: the generated displacement map on a neutral 128-grey field */
       .mapStage { background: var(--map-bg); }
@@ -170,6 +200,14 @@
         cursor: pointer;
         margin-bottom: 22px;
       }
+      body:not(.dark) .stage {
+        --scene-image: url("./assets/demo-bg.png");
+        --frost-color: #e6e0ff;
+      }
+      body.dark .stage {
+        --scene-image: url("./assets/demo-bg-dark.png");
+        --frost-color: #05030d;
+      }
       .theme-toggle:hover { border-color: var(--primary); }
       .theme-toggle .dot {
         width: 9px;
@@ -194,8 +232,41 @@
       <figure>
         <div class="playground">
           <div class="stage" id="stage">
-            <canvas class="glassCanvas" id="glass"></canvas>
-            <div class="outline" id="outline"></div>
+            <svg class="svgDefs" aria-hidden="true" focusable="false">
+              <defs>
+                <filter id="glassSvgFilter" filterUnits="objectBoundingBox" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB" x="0" y="0" width="1" height="1">
+                  <feFlood flood-color="rgb(128,128,128)" flood-opacity="1" result="mapBg" />
+                  <feImage id="feMap" preserveAspectRatio="none" result="rawMap" />
+                  <feComposite in="rawMap" in2="mapBg" operator="over" result="map" />
+
+                  <feGaussianBlur id="feSourceBlur" in="SourceGraphic" stdDeviation="0 0" result="blurred" />
+
+                  <feDisplacementMap id="feDispR" in="blurred" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="dispRRaw" />
+                  <feColorMatrix in="dispRRaw" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="dispR" />
+                  <feDisplacementMap id="feDispG" in="blurred" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="dispGRaw" />
+                  <feColorMatrix in="dispGRaw" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="dispG" />
+                  <feDisplacementMap id="feDispB" in="blurred" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="dispBRaw" />
+                  <feColorMatrix in="dispBRaw" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="dispB" />
+                  <feComposite in="dispR" in2="dispG" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="dispRG" />
+                  <feComposite in="dispRG" in2="dispB" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="lensBase" />
+
+                  <feColorMatrix id="feSpecMask" in="map" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 1 0 -0.50196" result="specMask" />
+                  <feOffset id="fePickupOffset" in="SourceGraphic" dx="0" dy="0" result="pickupOffset" />
+                  <feGaussianBlur id="fePickupBlur" in="pickupOffset" stdDeviation="0" result="pickupBlur" />
+                  <feComposite in="pickupBlur" in2="specMask" operator="in" result="pickupSpec" />
+                  <feColorMatrix id="fePickupMatrix" in="pickupSpec" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="pickupBoost" />
+                  <feColorMatrix id="feWhiteSpecMatrix" in="specMask" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0" result="whiteSpec" />
+                  <feBlend in="lensBase" in2="pickupBoost" mode="screen" result="withPickup" />
+                  <feBlend in="withPickup" in2="whiteSpec" mode="screen" result="lensResult" />
+                </filter>
+              </defs>
+            </svg>
+            <div class="scene" id="scene"></div>
+            <div class="lensLayer" id="lensLayer">
+              <div class="lensContent" id="lensContent"></div>
+              <div class="frostVeil" id="frostVeil"></div>
+            </div>
+            <div class="lensOutline" id="lensOutline"></div>
           </div>
           <div class="mapStage" id="mapStage">
             <img class="mapBlob" id="mapBlob" alt="Generated displacement map at the lens position" draggable="false" />
