@@ -39,8 +39,11 @@ modules.
 - Safari-style filter-id cache busting when the map changes.
 - Frost as a separate material/opacity veil.
 - Specular highlights driven by the displacement map's blue channel.
-- Directional Color Pickup layered from nearby scene color onto the specular
-  highlight.
+- Directional Color Pickup without WebGL:
+  - a smooth saturated pickup map is fed to SVG through `feImage`, masked by the
+    map's blue specular channel, and blended into the lens;
+  - a clipped CSS highlight layer mirrors the same controls for a visible
+    Apple-like colour edge without hard DOM artifacts.
 - Dark/light theme tuning for different frost behavior.
 
 ## Files

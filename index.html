@@ -87,7 +87,8 @@
         border-radius: inherit;
       }
       .lensLayer,
-      .lensOutline {
+      .lensOutline,
+      .colorHighlight {
         position: absolute;
         top: 0;
         left: 0;
@@ -100,6 +101,12 @@
       }
       .lensOutline {
         box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.28);
+      }
+      .colorHighlight {
+        overflow: hidden;
+        opacity: 0;
+        filter: blur(8px) saturate(1.8);
+        transform-origin: top left;
       }
       .lensContent {
         border-radius: inherit;
@@ -251,9 +258,10 @@
                   <feComposite in="dispRG" in2="dispB" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="lensBase" />
 
                   <feColorMatrix id="feSpecMask" in="map" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 1 0 -0.50196" result="specMask" />
-                  <feOffset id="fePickupOffset" in="SourceGraphic" dx="0" dy="0" result="pickupOffset" />
-                  <feGaussianBlur id="fePickupBlur" in="pickupOffset" stdDeviation="0" result="pickupBlur" />
-                  <feComposite in="pickupBlur" in2="specMask" operator="in" result="pickupSpec" />
+                  <feImage id="fePickupMap" preserveAspectRatio="none" result="pickupColorRaw" />
+                  <feOffset id="fePickupOffset" in="pickupColorRaw" dx="0" dy="0" result="pickupOffset" />
+                  <feGaussianBlur id="fePickupBlur" in="pickupOffset" stdDeviation="0" result="pickupColor" />
+                  <feComposite in="pickupColor" in2="specMask" operator="in" result="pickupSpec" />
                   <feColorMatrix id="fePickupMatrix" in="pickupSpec" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="pickupBoost" />
                   <feColorMatrix id="feWhiteSpecMatrix" in="specMask" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0" result="whiteSpec" />
                   <feBlend in="lensBase" in2="pickupBoost" mode="screen" result="withPickup" />
@@ -266,6 +274,7 @@
               <div class="lensContent" id="lensContent"></div>
               <div class="frostVeil" id="frostVeil"></div>
             </div>
+            <div class="colorHighlight" id="colorHighlight"></div>
             <div class="lensOutline" id="lensOutline"></div>
           </div>
           <div class="mapStage" id="mapStage">

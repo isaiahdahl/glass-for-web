@@ -43,13 +43,13 @@ const state = {
   chroma: 0.2,
   blur: 0,
   frost: 0.08,
-  glow: 0.1,
-  edgeHighlight: 0.25,
+  glow: 0.35,
+  edgeHighlight: 0.45,
   specularAngle: 45,
-  specular: 1.0,
-  colorPickup: 0.7,
+  specular: 1.35,
+  colorPickup: 0.9,
   pickupOffset: 56,
-  pickupSoftness: 28,
+  pickupSoftness: 22,
   posX: 0.5,
   posY: 0.5,
 };
@@ -63,6 +63,7 @@ const stageEl = document.getElementById("stage");
 const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
 const lensOutlineEl = document.getElementById("lensOutline");
+const colorHighlightEl = document.getElementById("colorHighlight");
 const lensContentEl = document.getElementById("lensContent");
 const frostVeilEl = document.getElementById("frostVeil");
 const mapStageEl = document.getElementById("mapStage");
@@ -75,12 +76,14 @@ const feSourceBlur = document.getElementById("feSourceBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
+const fePickupMap = document.getElementById("fePickupMap");
 const fePickupOffset = document.getElementById("fePickupOffset");
 const fePickupBlur = document.getElementById("fePickupBlur");
 const fePickupMatrix = document.getElementById("fePickupMatrix");
 const feWhiteSpecMatrix = document.getElementById("feWhiteSpecMatrix");
 
 const mapCanvas = document.createElement("canvas");
+const pickupCanvas = document.createElement("canvas");
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -97,6 +100,62 @@ function buildScene(container) {
   // background image. Keep that structure: the SVG filter bends SourceGraphic,
   // but the source is an image-like DOM surface, not hard colored dash nodes.
   container.replaceChildren();
+}
+
+// ── SVG colour-pickup map ────────────────────────────────────────────────
+function regenPickupMap() {
+  const size = MAP_SIZE;
+  pickupCanvas.width = size;
+  pickupCanvas.height = size;
+  const ctx = pickupCanvas.getContext("2d");
+  ctx.clearRect(0, 0, size, size);
+
+  // A smooth, saturated environment map for the specular pass. This restores
+  // the Apple-like colored highlight, but because it is smooth (not hard DOM
+  // dash geometry) it does not produce the blocky artifacts from the previous
+  // SVG attempt. It is consumed only by SVG feImage/feComposite/feBlend.
+  const angle = (state.specularAngle * Math.PI) / 180;
+  const cx = size * 0.5;
+  const cy = size * 0.5;
+  let base;
+  if (ctx.createConicGradient) {
+    base = ctx.createConicGradient(angle, cx, cy);
+    base.addColorStop(0.00, "#9eff65");
+    base.addColorStop(0.16, "#00e6a8");
+    base.addColorStop(0.32, "#0085ff");
+    base.addColorStop(0.50, "#3d00ff");
+    base.addColorStop(0.68, "#ff00aa");
+    base.addColorStop(0.84, "#ff8a50");
+    base.addColorStop(1.00, "#9eff65");
+  } else {
+    base = ctx.createLinearGradient(0, 0, size, size);
+    base.addColorStop(0, "#9eff65");
+    base.addColorStop(0.35, "#00b7ff");
+    base.addColorStop(0.7, "#ff00aa");
+    base.addColorStop(1, "#ff8a50");
+  }
+  ctx.globalAlpha = darkMode ? 0.95 : 0.72;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  const addBlob = (x, y, r, color, alpha) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  };
+  ctx.globalCompositeOperation = "lighter";
+  addBlob(size * 0.24, size * 0.18, size * 0.58, "#b9ff42", darkMode ? 0.95 : 0.55);
+  addBlob(size * 0.80, size * 0.18, size * 0.52, "#00ffaa", darkMode ? 0.80 : 0.45);
+  addBlob(size * 0.92, size * 0.76, size * 0.58, "#005dff", darkMode ? 0.95 : 0.55);
+  addBlob(size * 0.22, size * 0.80, size * 0.64, "#ff008c", darkMode ? 0.90 : 0.52);
+  addBlob(size * 0.12, size * 0.34, size * 0.42, "#ff9d4d", darkMode ? 0.75 : 0.40);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+
+  setHref(fePickupMap, pickupCanvas.toDataURL("image/png"));
 }
 
 // ── displacement map regeneration ────────────────────────────────────────
@@ -152,8 +211,11 @@ function updateFilterPrimitives(fullW, fullH) {
   fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / Math.max(1, fullH)));
   fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(1, Math.max(fullW, fullH))));
 
-  const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 1.7 : 1.15));
-  const whiteA = Math.max(0, state.specular * (1 - state.colorPickup) * (darkMode ? 0.8 : 0.55));
+  // Spec mask alpha tops out around 0.5 because the map B channel is encoded as
+  // 128..255. These gains intentionally restore a vivid Apple-like colored edge
+  // while remaining pure SVG filter compositing.
+  const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 3.1 : 2.45));
+  const whiteA = Math.max(0, state.specular * (1 - state.colorPickup) * (darkMode ? 1.0 : 0.7));
   fePickupMatrix.setAttribute(
     "values",
     `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${pickupA} 0`,
@@ -162,6 +224,28 @@ function updateFilterPrimitives(fullW, fullH) {
     "values",
     `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 ${whiteA} 0`,
   );
+}
+
+function updateColorHighlight() {
+  const opacity = clamp01(state.specular * state.colorPickup * (darkMode ? 0.50 : 0.46));
+  const blur = Math.max(3, state.pickupSoftness * 0.22);
+  const a = state.specularAngle;
+  colorHighlightEl.style.opacity = String(opacity);
+  colorHighlightEl.style.mixBlendMode = darkMode ? "screen" : "normal";
+  colorHighlightEl.style.filter = `blur(${blur}px) saturate(${darkMode ? 2.25 : 2.15})`;
+  colorHighlightEl.style.background = `
+    radial-gradient(circle at 22% 14%, rgba(190,255,80,.95), transparent 30%),
+    radial-gradient(circle at 78% 16%, rgba(0,255,170,.86), transparent 34%),
+    radial-gradient(circle at 90% 78%, rgba(0,82,255,.90), transparent 36%),
+    radial-gradient(circle at 18% 82%, rgba(255,0,150,.86), transparent 36%),
+    conic-gradient(from ${a - 20}deg, rgba(170,255,80,.75), rgba(0,240,190,.75), rgba(0,90,255,.78), rgba(255,0,160,.72), rgba(255,150,70,.72), rgba(170,255,80,.75))
+  `;
+  // Keep the color mostly on the glass perimeter/specular band instead of
+  // flooding the whole tile. CSS mask is used only for the highlight layer;
+  // the underlying refraction remains SVG feDisplacementMap.
+  const mask = `radial-gradient(closest-side, transparent 34%, rgba(0,0,0,.30) 52%, rgba(0,0,0,.92) 74%, rgba(0,0,0,.72) 100%)`;
+  colorHighlightEl.style.maskImage = mask;
+  colorHighlightEl.style.webkitMaskImage = mask;
 }
 
 function updateFrostVeil() {
@@ -180,7 +264,7 @@ function render() {
   const x = state.posX * stageRect.w - fullW / 2;
   const y = state.posY * stageRect.h - fullH / 2;
 
-  for (const el of [lensLayerEl, lensOutlineEl]) {
+  for (const el of [lensLayerEl, colorHighlightEl, lensOutlineEl]) {
     el.style.width = `${fullW}px`;
     el.style.height = `${fullH}px`;
     el.style.borderRadius = `${state.borderRadius}px`;
@@ -195,6 +279,7 @@ function render() {
 
   updateFilterPrimitives(fullW, fullH);
   updateFrostVeil();
+  updateColorHighlight();
 
   const mr = mapStageEl.getBoundingClientRect();
   mapImg.style.width = `${fullW}px`;
@@ -251,6 +336,7 @@ function buildControls() {
         "specularAngle",
       ];
       if (mapKeys.includes(s.key)) regenMap();
+      if (s.key === "specularAngle") regenPickupMap();
       render();
     });
     row.append(label, input, val);
@@ -295,7 +381,10 @@ function applyTheme(theme, redraw = true) {
   document.body.classList.toggle("dark", darkMode);
   const label = document.querySelector("[data-theme-label]");
   if (label) label.textContent = darkMode ? "Light" : "Dark";
-  if (redraw) render();
+  if (redraw) {
+    regenPickupMap();
+    render();
+  }
 }
 
 function setupTheme() {
@@ -344,6 +433,7 @@ function boot() {
   attachDrag(stageEl);
   attachDrag(mapStageEl);
   setupTheme();
+  regenPickupMap();
   regenMap();
   resize();
   new ResizeObserver(resize).observe(stageEl);
@@ -353,6 +443,7 @@ function boot() {
     set(partial) {
       Object.assign(state, partial);
       syncControlWidgets();
+      regenPickupMap();
       regenMap();
       render();
     },
