@@ -9,6 +9,12 @@ import { generateDisplacementMap } from "./glass.js";
 const MAP_SIZE = 512;
 const THEME_KEY = "glass-web-theme";
 const FILTER_BASE_ID = "glassSvgFilter";
+// The filtered lens layer extends MARGIN px beyond the visible lens on every
+// side so the strong edge displacement samples real background content (not
+// transparent), giving Aave-style refraction right at the rim. The feImage
+// map covers only the central lens sub-region; the visible output is clipped
+// back to the lens.
+const MARGIN = 28;
 
 // EXACT Aave DisplacementMapPlayground sliders (component `S` in their bundle
 // 25ef42f3c325a091.js). Order, ranges, steps and defaults all mirror theirs.
@@ -91,8 +97,12 @@ function applyFreshFilterId(force = false) {
   const nextId = `${FILTER_BASE_ID}-${filterVersion}`;
   filterEl.id = nextId;
   const url = `url(#${nextId})`;
-  lensLayerEl.style.filter = url;
-  lensLayerEl.style.webkitFilter = url;
+  // The filter is applied to the full-stage scene (Aave's approach): the
+  // displacement map sits at the lens sub-region and refracts the real stage
+  // content around it, so edge refraction samples neighbouring grid instead
+  // of empty space.
+  sceneEl.style.filter = url;
+  sceneEl.style.webkitFilter = url;
 }
 
 // ── live DOM scene ───────────────────────────────────────────────────────
@@ -138,23 +148,31 @@ function updateFilterPrimitives(fullW, fullH) {
   // Safari is much more reliable when the filter region is the lens bbox and
   // the displacement map fills that bbox. The underlying source is aligned by
   // translating the DOM content inside the moving lens layer.
-  feMap.setAttribute("x", "0");
-  feMap.setAttribute("y", "0");
-  feMap.setAttribute("width", "1");
-  feMap.setAttribute("height", "1");
+  // Filter is on the full-stage scene. feImage covers the lens sub-region in
+  // the stage's objectBoundingBox fractions; the map's neutral grey fills
+  // the rest (zero displacement outside the lens).
+  const sw = Math.max(1, stageRect.w), sh = Math.max(1, stageRect.h);
+  const x = state.posX * sw - fullW / 2;
+  const y = state.posY * sh - fullH / 2;
+  feMap.setAttribute("x", String(x / sw));
+  feMap.setAttribute("y", String(y / sh));
+  feMap.setAttribute("width", String(fullW / sw));
+  feMap.setAttribute("height", String(fullH / sh));
 
-  // Displacement scale (objectBoundingBox units, exactly matching Aave's
-  // `scale` variable). A sweep vs Aave's live WebKit render showed our
-  // refraction is within ~10% of theirs at the same scale value — inside the
-  // render-pipeline noise floor — so we keep the variable 1:1.
+  // Displacement scale in the stage's objectBoundingBox units — exactly
+  // matching Aave, whose filter also spans the full stage. scale=0.1 then
+  // yields ~0.1*stageWidth px of displacement, giving the strong edge
+  // refraction at the lens rim.
   const scale = state.scale;
   feDispR.setAttribute("scale", String(scale * (1 + 0.2 * state.chroma)));
   feDispG.setAttribute("scale", String(scale * (1 + 0.1 * state.chroma)));
   feDispB.setAttribute("scale", String(scale));
 
+  // Blur stdDeviations are in the stage objectBoundingBox now (filter spans
+  // the stage), so divide pixel amounts by the stage dimensions.
   feSourceBlur.setAttribute(
     "stdDeviation",
-    `${state.blur / Math.max(1, fullW)} ${state.blur / Math.max(1, fullH)}`,
+    `${state.blur / sw} ${state.blur / sh}`,
   );
   // Safari-only final-output blur. Aave's own WebKit render is slightly soft
   // (their compositor applies less sub-pixel AA, and the production build has
@@ -164,11 +182,11 @@ function updateFilterPrimitives(fullW, fullH) {
   // Safari-only final-output blur, tuned to Aave's live WebKit render. Their
   // refracted interior is slightly softer than a raw feDisplacementMap on
   // WebKit; a sweep against their page minimised the diff at ~0.75px.
-  const finalBlurPx = isSafariLike ? 0.75 : 0;
+  const finalBlurPx = isSafariLike ? Number(window.__finalBlur ?? 0.5) : 0;
   if (feFinalBlur) {
     feFinalBlur.setAttribute(
       "stdDeviation",
-      `${finalBlurPx / Math.max(1, fullW)} ${finalBlurPx / Math.max(1, fullH)}`,
+      `${finalBlurPx / sw} ${finalBlurPx / sh}`,
     );
   }
 
@@ -180,25 +198,14 @@ function render() {
   const x = state.posX * stageRect.w - fullW / 2;
   const y = state.posY * stageRect.h - fullH / 2;
 
-  for (const el of [lensLayerEl, lensOutlineEl]) {
-    el.style.width = `${fullW}px`;
-    el.style.height = `${fullH}px`;
-    el.style.borderRadius = `${state.borderRadius}px`;
-    el.style.transform = `translate(${x}px, ${y}px)`;
-  }
-  // Clip-path no longer needed for the rim (the opaque map fixes that), but
-  // we keep a rounded clip so the lens layer can't spill past its own
-  // rounded box on either engine. This matches the lens silhouette.
-  const clip = `inset(0 round ${state.borderRadius}px)`;
-  lensLayerEl.style.clipPath = clip;
-  lensLayerEl.style.webkitClipPath = clip;
+  // The visible lens outline sits at the lens rect (x,y, fullW x fullH).
+  lensOutlineEl.style.width = `${fullW}px`;
+  lensOutlineEl.style.height = `${fullH}px`;
+  lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
+  lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
 
-  // The filtered SourceGraphic is the full scene translated underneath a moving
-  // lens-sized viewport. This keeps the lens and rendered glass in the same
-  // coordinate system on Safari/iOS.
-  lensContentEl.style.width = `${stageRect.w}px`;
-  lensContentEl.style.height = `${stageRect.h}px`;
-  lensContentEl.style.transform = `translate(${-x}px, ${-y}px)`;
+  // The separate lens layer is unused now (filter lives on the scene).
+  lensLayerEl.style.display = "none";
 
   updateFilterPrimitives(fullW, fullH);
   applyFreshFilterId(false);
