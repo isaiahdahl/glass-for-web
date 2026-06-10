@@ -104,7 +104,34 @@ underlying content (same bg image, same lens params) lines up.
 - `app.js` — state, slider defs, filter updates, scene
 - `glass.js` — map baker (match Aave's `o()` exactly, alpha=255 everywhere)
 
-## What's been tried (previous phase, on master)
+## BREAKTHROUGH (exact-parity phase)
+
+The big Safari bug was architectural. Two fixes nailed it:
+
+1. **Harness was comparing against a NON-refracting Aave reference.** Aave's
+   playground only applies its displacement filter after a pointer interaction
+   moves the lens; a static headless load shows a bare lens. `captureAave` now
+   drags the lens and returns it to centre before screenshotting. Without this
+   we were optimising toward a blank reference.
+
+2. **Apply the SVG filter to the FULL-STAGE scene, not a lens-sized layer.**
+   WebKit derives a filter's objectBoundingBox from the filtered element's own
+   bbox. Our old lens layer contained the full stage as an overflowing child,
+   so WebKit scaled all objectBoundingBox primitive coords by ~2.4x and
+   anchored top-left -> the "scaled 2x, pinned, cut off" refraction the user
+   reported. Now the filter lives on the full-stage `scene`, `feImage` is
+   positioned at the lens sub-region (stage-fraction x/y/width/height), and
+   `feDisplacementMap scale` is relative to the stage (= Aave). This both
+   fixes the scale/anchor bug AND gives the strong edge refraction.
+
+Result: our-WebKit vs Aave-WebKit = 0.40% (from 1.15%); our Chromium vs our
+WebKit = 0.067%. Refraction pattern (edge-curving vertical dashes) matches
+Aave in both light and dark.
+
+Metric note: pixelmatch threshold matters — 0.12 was blind to the low-contrast
+refracted dashes. Use <=0.06 when judging refraction pattern.
+
+## What's been tried (cross-browser phase, on master)
 Cross-browser (our-Chrome vs our-WebKit) parity got worst-case pixel_diff from
 1.14% to 0.36% via: clip-path inset rounded on lensLayer, Safari-only final
 feGaussianBlur, minimum-kernel feMapBlur. Those were *patches*. This phase
