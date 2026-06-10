@@ -109,6 +109,26 @@ function diffPct(pngA, pngB) {
   return { pct, diff, w, h };
 }
 
+// Crop the centered fraction of a decoded PNG (returns a new PNG object).
+function cropCenter(png, fracW, fracH) {
+  const w = Math.max(1, Math.floor(png.width * fracW));
+  const h = Math.max(1, Math.floor(png.height * fracH));
+  const x0 = Math.floor((png.width - w) / 2);
+  const y0 = Math.floor((png.height - h) / 2);
+  const out = new PNG({ width: w, height: h });
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = ((y + y0) * png.width + (x + x0)) * 4;
+      const di = (y * w + x) * 4;
+      out.data[di] = png.data[si];
+      out.data[di + 1] = png.data[si + 1];
+      out.data[di + 2] = png.data[si + 2];
+      out.data[di + 3] = png.data[si + 3];
+    }
+  }
+  return out;
+}
+
 function cropTo(png, w, h) {
   const out = Buffer.alloc(w * h * 4);
   for (let y = 0; y < h; y++) {
@@ -144,11 +164,11 @@ async function main() {
   errors.push(...wk.errors.map((e) => `webkit ${e}`));
 
   let pixelDiffPcts = [];
+  let lensDiffPcts = [];
   let webkitContrasts = [];
   let chromiumContrasts = [];
   let webkitRenderMs = [];
   let chromiumRenderMs = [];
-  let webkitHasOutput = 0;
 
   for (const scenario of SCENARIOS) {
     const c = await captureScenario(cr.page, "chromium", scenario);
@@ -166,36 +186,39 @@ async function main() {
     const { pct, diff, w: dw, h: dh } = diffPct(pngC, pngW);
     pixelDiffPcts.push(pct);
 
+    // Lens-region only diff: much more sensitive than full-stage diff
+    // because background is identical and dilutes the signal.
+    const lensCropC = cropCenter(pngC, 0.5, 0.5);
+    const lensCropW = cropCenter(pngW, 0.5, 0.5);
+    const lensDiff = diffPct(lensCropC, lensCropW);
+    lensDiffPcts.push(lensDiff.pct);
+
     // Save diff image.
     const diffPng = new PNG({ width: dw, height: dh });
     diffPng.data = diff.data;
     writeFileSync(join(SHOTS, `diff_${scenario.id}.png`), PNG.sync.write(diffPng));
 
-    // A naive "has filter output" check: if webkit stddev is at least 30% of
-    // chromium's, the lens is rendering something. (Helps catch the "blank
-    // Safari" failure mode.)
-    if (cContrast > 0 && wContrast > 0.3 * cContrast) webkitHasOutput += 1;
-
-    console.error(`[${scenario.id}] diff=${pct.toFixed(3)}% chromContrast=${cContrast.toFixed(2)} webkitContrast=${wContrast.toFixed(2)} cms=${c.renderMs} wms=${w.renderMs}`);
+    console.error(`[${scenario.id}] diff=${pct.toFixed(3)}% lensDiff=${lensDiff.pct.toFixed(3)}% chromContrast=${cContrast.toFixed(2)} webkitContrast=${wContrast.toFixed(2)} cms=${c.renderMs} wms=${w.renderMs}`);
     // Also emit per-scenario diagnostics as METRIC lines for the dashboard.
     console.log(`METRIC scn_${scenario.id}_diff=${pct.toFixed(4)}`);
+    console.log(`METRIC scn_${scenario.id}_lens_diff=${lensDiff.pct.toFixed(4)}`);
     console.log(`METRIC scn_${scenario.id}_webkit_contrast=${wContrast.toFixed(3)}`);
     console.log(`METRIC scn_${scenario.id}_chromium_contrast=${cContrast.toFixed(3)}`);
   }
 
-  // Aggregate metrics.
+  // Aggregate metrics. Primary is the median lens-region diff — that's where
+  // the WebKit failure shows up most visibly.
   const medDiff = median(pixelDiffPcts);
+  const medLensDiff = median(lensDiffPcts);
   const medWContrast = median(webkitContrasts);
   const medCContrast = median(chromiumContrasts);
-  const score = medDiff + Math.max(0, 8 - medWContrast) * 2;
 
-  console.log(`METRIC pixel_diff_pct=${medDiff.toFixed(4)}`);
+  console.log(`METRIC pixel_diff_pct=${medLensDiff.toFixed(4)}`);
+  console.log(`METRIC stage_diff_pct=${medDiff.toFixed(4)}`);
   console.log(`METRIC webkit_lens_contrast=${medWContrast.toFixed(3)}`);
   console.log(`METRIC chromium_lens_contrast=${medCContrast.toFixed(3)}`);
   console.log(`METRIC webkit_render_ms=${median(webkitRenderMs)}`);
   console.log(`METRIC chromium_render_ms=${median(chromiumRenderMs)}`);
-  console.log(`METRIC webkit_has_filter_output=${webkitHasOutput}`);
-  console.log(`METRIC safari_parity_score=${score.toFixed(4)}`);
 
   if (errors.length) {
     console.error("--- runtime errors ---");

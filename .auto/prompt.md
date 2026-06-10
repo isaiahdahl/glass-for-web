@@ -3,13 +3,24 @@
 ## Objective
 
 We have a working SVG-filter-based "liquid glass" lens in `index.html` / `app.js` /
-`glass.js`. **Chromium renders it correctly**; **Safari/WebKit renders it dim,
-nearly transparent, with no visible refraction** — see the first screenshot the
-user provided. Aave's production implementation
-(<https://aave.com/design/building-glass-for-the-web>) renders identically in
-Chrome, Safari, and Firefox. We reverse-engineered their bundle (saved at
-`.auto/refs/aave-glass.pretty.js`) and we need to bring Safari to parity, ideally
-matching the *Aave* render where Chrome diverges.
+`glass.js`. **Chromium renders it correctly** (soft Aave-style glass: rounded
+lens with a faint refractive shape and the grid bending behind it).
+**WebKit/Safari renders it WRONG**: instead of refracting the underlying grid,
+the lens shows the unrefracted dashes from the source DOM piercing straight
+through the rounded shape as if the displacement map had no effect on the
+shape boundary. The corners aren't masking the grid; the grid is bleeding
+through the rounded silhouette.
+
+Visually:
+- Chromium = lens looks like a subtle pane of glass with soft refraction +
+  drop shadow (matches Aave's site at <https://aave.com/design/building-glass-for-the-web>).
+- WebKit = dashed grid lines pierce through the rounded rect as sharp
+  un-refracted strokes; the lens silhouette is barely there and the
+  displacement map is producing hard-edged garbage instead of smooth bending.
+
+Aave's production implementation renders identically across Chrome, Safari,
+and Firefox. We reverse-engineered their bundle (saved at
+`.auto/refs/aave-glass.pretty.js`) and need to bring Safari to parity.
 
 Constraints (hard):
 - **No WebGL.** Stay on SVG filters + (optionally) `backdrop-filter`.
@@ -24,24 +35,26 @@ Captured by `./.auto/measure.sh` for a fixed set of scenarios in BOTH
 Chromium and WebKit at a fixed viewport. All emitted as `METRIC name=value`
 lines. Median over 3 captures per scenario where noted.
 
-- **Primary**: `safari_parity_score` — *combined* score (lower is better) made
-  of pixel-diff between Chromium and WebKit renders + a penalty when the
-  WebKit lens has no contrast (the "lens went blank" failure mode). Computed
-  as `pixel_diff_pct + max(0, 8 - webkit_lens_contrast) * 2`.
+- **Primary**: `pixel_diff_pct` — % of pixels that differ between Chromium
+  and WebKit renders of the same scenario (pixelmatch, threshold 0.1), median
+  across 3 scenarios. Lower is better. **This is the right metric for this
+  problem**: Chromium is the ground truth (matches Aave's site), and we want
+  WebKit to converge on it.
 - Secondary:
-  - `webkit_lens_contrast`: stddev of luminance in the lens center crop on
-    WebKit. **Must be roughly >= chromium_lens_contrast.** If this drops near
-    zero the lens disappeared in Safari.
-  - `chromium_lens_contrast`: same metric on Chromium — sanity check we
-    haven't broken Chrome.
-  - `pixel_diff_pct`: % pixels exceeding threshold between Chromium and WebKit
-    in the stage crop (pixelmatch with threshold 0.1).
+  - `chromium_lens_contrast`: stddev of luminance in the lens center crop on
+    Chromium — sanity check Chromium hasn't drifted.
+  - `webkit_lens_contrast`: same on WebKit. **Do NOT** treat high contrast as
+    good — the broken WebKit lens has *high* stddev because of unrefracted
+    sharp dashes piercing through. Useful only for detecting the "lens
+    blank" mode (contrast near 0).
+  - `lens_region_diff_pct`: pixel diff restricted to the lens bounding box
+    only. More sensitive than `pixel_diff_pct` (which averages across the
+    whole stage including identical background).
   - `webkit_render_ms`, `chromium_render_ms`: time to ready+paint.
-  - `webkit_has_filter_output`: 1 if the WebKit screenshot has any
-    nontrivial color variation in the lens region, 0 otherwise.
+  - Per-scenario `scn_*_diff` lines for the dashboard.
 
-A run is a "win" if `safari_parity_score` drops AND `chromium_lens_contrast`
-stays within 10% of baseline (we don't want to fix Safari by breaking Chrome).
+A run is a "win" if `pixel_diff_pct` drops AND `chromium_lens_contrast` stays
+within 10% of baseline (don't fix Safari by breaking Chrome).
 
 ## How to run
 
