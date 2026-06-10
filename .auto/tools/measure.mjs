@@ -111,6 +111,32 @@ function lensContrastStat(png, fraction = 0.4) {
   return { mean, stdev, n };
 }
 
+// Edge density via a cheap 3x3 horizontal+vertical Sobel-ish kernel on
+// the luminance channel. Higher = more sharp edges in the image. Used to
+// detect the "WebKit went uniform mush" failure mode that pixel_diff can
+// hide — if WebKit's edge density collapses far below Chromium's, the
+// refraction signal is being smeared away rather than matched.
+function edgeDensity(png) {
+  const { width: w, height: h, data } = png;
+  if (w < 3 || h < 3) return 0;
+  let sum = 0, n = 0;
+  const lum = (i) => 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = (y * w + x) * 4;
+      const gx =
+        -lum(i - 4 - w * 4) - 2 * lum(i - 4) - lum(i - 4 + w * 4)
+        + lum(i + 4 - w * 4) + 2 * lum(i + 4) + lum(i + 4 + w * 4);
+      const gy =
+        -lum(i - 4 - w * 4) - 2 * lum(i - w * 4) - lum(i + 4 - w * 4)
+        + lum(i - 4 + w * 4) + 2 * lum(i + w * 4) + lum(i + 4 + w * 4);
+      sum += Math.sqrt(gx * gx + gy * gy);
+      n++;
+    }
+  }
+  return n > 0 ? sum / n : 0;
+}
+
 function diffPct(pngA, pngB) {
   // Both expected same size since same selector + same viewport.
   const w = Math.min(pngA.width, pngB.width);
@@ -189,6 +215,9 @@ async function main() {
   let chromiumContrasts = [];
   let webkitRenderMs = [];
   let chromiumRenderMs = [];
+  let edgeRatios = [];
+  let webkitEdges = [];
+  let chromiumEdges = [];
 
   for (const scenario of SCENARIOS) {
     const c = await captureScenario(cr.page, "chromium", scenario);
@@ -233,6 +262,13 @@ async function main() {
     writeFileSync(join(SHOTS, `lens_chromium_${scenario.id}.png`), PNG.sync.write(lensCropC));
     writeFileSync(join(SHOTS, `lens_webkit_${scenario.id}.png`), PNG.sync.write(lensCropW));
 
+    const edgeC = edgeDensity(lensCropC);
+    const edgeW = edgeDensity(lensCropW);
+    edgeRatios.push(edgeC > 0 ? edgeW / edgeC : 0);
+    chromiumEdges.push(edgeC);
+    webkitEdges.push(edgeW);
+    console.log(`METRIC scn_${scenario.id}_edge_ratio=${(edgeC > 0 ? edgeW / edgeC : 0).toFixed(4)}`);
+
     // Save diff image.
     const diffPng = new PNG({ width: dw, height: dh });
     diffPng.data = diff.data;
@@ -253,8 +289,20 @@ async function main() {
   const medWContrast = median(webkitContrasts);
   const medCContrast = median(chromiumContrasts);
 
+  const medEdgeRatio = median(edgeRatios);
+  const medWEdge = median(webkitEdges);
+  const medCEdge = median(chromiumEdges);
+  // Penalise WebKit losing >20% of Chromium's edge density (i.e., the
+  // refraction got smeared away rather than matched). Capped so a small
+  // smoothing improvement doesn't get over-penalised.
+  const edgePenalty = Math.max(0, 0.8 - medEdgeRatio) * 5; // 5%/0.2 ratio gap
+  const composite = medLensDiff + edgePenalty;
   console.log(`METRIC pixel_diff_pct=${medLensDiff.toFixed(4)}`);
   console.log(`METRIC stage_diff_pct=${medDiff.toFixed(4)}`);
+  console.log(`METRIC parity_score=${composite.toFixed(4)}`);
+  console.log(`METRIC edge_ratio=${medEdgeRatio.toFixed(4)}`);
+  console.log(`METRIC chromium_edges=${medCEdge.toFixed(3)}`);
+  console.log(`METRIC webkit_edges=${medWEdge.toFixed(3)}`);
   console.log(`METRIC webkit_lens_contrast=${medWContrast.toFixed(3)}`);
   console.log(`METRIC chromium_lens_contrast=${medCContrast.toFixed(3)}`);
   console.log(`METRIC webkit_render_ms=${median(webkitRenderMs)}`);

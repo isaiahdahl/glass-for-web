@@ -16,12 +16,12 @@ case "${1:-run}" in
   run)
     ts=$(date +%s)
     out=$(./.auto/measure.sh 2>&1)
-    primary=$(grep -E '^METRIC pixel_diff_pct=' <<< "$out" | tail -1 | sed -E 's/.*=//')
-    cChrom=$(grep -E '^METRIC chromium_lens_contrast=' <<< "$out" | tail -1 | sed -E 's/.*=//')
-    cWk=$(grep -E '^METRIC webkit_lens_contrast=' <<< "$out" | tail -1 | sed -E 's/.*=//')
+    primary=$(grep -E '^METRIC parity_score=' <<< "$out" | tail -1 | sed -E 's/.*=//')
+    pdiff=$(grep -E '^METRIC pixel_diff_pct=' <<< "$out" | tail -1 | sed -E 's/.*=//')
+    er=$(grep -E '^METRIC edge_ratio=' <<< "$out" | tail -1 | sed -E 's/.*=//')
     sChrom=$(grep -E '^METRIC chromium_render_ms=' <<< "$out" | tail -1 | sed -E 's/.*=//')
     sWk=$(grep -E '^METRIC webkit_render_ms=' <<< "$out" | tail -1 | sed -E 's/.*=//')
-    echo "[$(date +%H:%M:%S)] pixel_diff_pct=$primary chrom_contrast=$cChrom webkit_contrast=$cWk chrom_ms=$sChrom webkit_ms=$sWk"
+    echo "[$(date +%H:%M:%S)] parity_score=$primary  pixel_diff=$pdiff  edge_ratio=$er  chrom_ms=$sChrom  webkit_ms=$sWk"
     # Persist all METRIC lines + timestamp into log.jsonl.
     {
       echo -n "{\"ts\":$ts,"
