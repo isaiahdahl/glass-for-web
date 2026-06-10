@@ -78,6 +78,38 @@ function diffPct(a, b) {
   return { pct: (mism / (w * h)) * 100, diff, w, h };
 }
 
+// Shift PNG `b` by (dx,dy) and count mismatches vs `a` (no diff image).
+function diffCountShifted(a, b, dx, dy) {
+  const w = a.width, h = a.height;
+  let mism = 0;
+  const thr = 0.12 * 255 * 3; // per-pixel channel-sum threshold
+  for (let y = 0; y < h; y++) {
+    const by = y + dy;
+    if (by < 0 || by >= h) { mism += w; continue; }
+    for (let x = 0; x < w; x++) {
+      const bx = x + dx;
+      if (bx < 0 || bx >= w) { mism++; continue; }
+      const ia = (y * w + x) * 4;
+      const ib = (by * w + bx) * 4;
+      const d = Math.abs(a.data[ia] - b.data[ib]) + Math.abs(a.data[ia+1] - b.data[ib+1]) + Math.abs(a.data[ia+2] - b.data[ib+2]);
+      if (d > thr) mism++;
+    }
+  }
+  return (mism / (w * h)) * 100;
+}
+
+// Find the integer (dx,dy) in [-R,R]^2 minimizing the shifted diff.
+function bestAlignedDiff(a, b, R = 4) {
+  let best = Infinity, bdx = 0, bdy = 0;
+  for (let dy = -R; dy <= R; dy++) {
+    for (let dx = -R; dx <= R; dx++) {
+      const p = diffCountShifted(a, b, dx, dy);
+      if (p < best) { best = p; bdx = dx; bdy = dy; }
+    }
+  }
+  return { pct: best, dx: bdx, dy: bdy };
+}
+
 // ---- capture our demo ----------------------------------------------------
 async function captureOur(browserType, name, theme) {
   const b = await browserType.launch();
@@ -170,8 +202,12 @@ async function main() {
       const d = diffPct(aaveCrop, ourWkCrop);
       aaveDiffLight = d.pct;
       writeFileSync(join(SHOTS, "diff_aave_webkit.png"), PNG.sync.write(d.diff));
+      const aligned = bestAlignedDiff(aaveCrop, ourWkCrop, 4);
+      console.log(`METRIC aave_webkit_diff_aligned=${aligned.pct.toFixed(4)}`);
+      console.log(`METRIC aave_align_dx=${aligned.dx}`);
+      console.log(`METRIC aave_align_dy=${aligned.dy}`);
       aaveAvail = 1;
-      console.error(`[aave light] our-webkit vs aave-webkit = ${aaveDiffLight.toFixed(3)}%`);
+      console.error(`[aave light] raw=${aaveDiffLight.toFixed(3)}% aligned=${aligned.pct.toFixed(3)}% shift=(${aligned.dx},${aligned.dy})`);
     } catch (e) {
       console.error(`[aave light] failed: ${e.message}`);
     }
