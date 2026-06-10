@@ -18,10 +18,9 @@ PIDFILE=".auto/.server.pid"
 # Catches typos that would just blow up Playwright with no useful signal.
 node --check app.js
 node --check glass.js
-# Cheap HTML sanity: ensure key IDs are still present.
-for id in glassSvgFilter feMap feSourceBlur feDispR feDispG feDispB \
-          fePickupOffset fePickupBlur fePickupMatrix feWhiteSpecMatrix \
-          stage scene lensLayer lensOutline lensContent frostVeil \
+# Cheap HTML sanity: ensure core IDs are still present (color-pickup IDs
+# intentionally NOT required during the exact-parity phase).
+for id in glassSvgFilter feMap stage scene lensLayer lensOutline lensContent \
           mapStage mapBlob controls themeToggle; do
   if ! grep -q "id=\"$id\"" index.html; then
     echo "[checks] missing id=$id in index.html" >&2

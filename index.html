@@ -49,15 +49,21 @@
       figure { margin: 0; }
       .playground {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        /* Match Aave's playground: two fixed 342x320 stages side by side. The
+           fixed size is what makes the cover-fit grid scale identical to
+           theirs (a fixed-size 140px lens over a different-sized stage would
+           change the grid-to-lens ratio). */
+        grid-template-columns: 342px 342px;
+        justify-content: center;
         gap: 22px;
       }
       .stage,
       .mapStage {
         position: relative;
-        border-radius: var(--radius);
+        border-radius: 32px;
         overflow: hidden;
-        aspect-ratio: 1.47 / 1;
+        width: 342px;
+        height: 320px;
         touch-action: none;
         user-select: none;
         cursor: grab;
