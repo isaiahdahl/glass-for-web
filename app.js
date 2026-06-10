@@ -9,12 +9,6 @@ import { generateDisplacementMap } from "./glass.js";
 const MAP_SIZE = 512;
 const THEME_KEY = "glass-web-theme";
 const FILTER_BASE_ID = "glassSvgFilter";
-// The filtered lens layer extends MARGIN px beyond the visible lens on every
-// side so the strong edge displacement samples real background content (not
-// transparent), giving Aave-style refraction right at the rim. The feImage
-// map covers only the central lens sub-region; the visible output is clipped
-// back to the lens.
-const MARGIN = 28;
 
 // EXACT Aave DisplacementMapPlayground sliders (component `S` in their bundle
 // 25ef42f3c325a091.js). Order, ranges, steps and defaults all mirror theirs.
@@ -182,7 +176,7 @@ function updateFilterPrimitives(fullW, fullH) {
   // Safari-only final-output blur, tuned to Aave's live WebKit render. Their
   // refracted interior is slightly softer than a raw feDisplacementMap on
   // WebKit; a sweep against their page minimised the diff at ~0.75px.
-  const finalBlurPx = isSafariLike ? Number(window.__finalBlur ?? 0.5) : 0;
+  const finalBlurPx = isSafariLike ? 0.5 : 0;
   if (feFinalBlur) {
     feFinalBlur.setAttribute(
       "stdDeviation",
