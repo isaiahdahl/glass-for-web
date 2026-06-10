@@ -70,6 +70,7 @@ const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
+const feLensMask = document.getElementById("feLensMask");
 
 const mapCanvas = document.createElement("canvas");
 
@@ -152,6 +153,25 @@ function updateFilterPrimitives(fullW, fullH) {
   feMap.setAttribute("y", String(y / sh));
   feMap.setAttribute("width", String(fullW / sw));
   feMap.setAttribute("height", String(fullH / sh));
+
+  // Clip the lens-producing primitives to the lens rect (Aave's `data-lens`
+  // subregion). This is what makes the hole-and-fill work: the displacement
+  // output (lensResult) is only written inside the lens rect, so it's
+  // transparent elsewhere and `lensResult over holedSG` lets the sharp scene
+  // show through outside the lens. The subregion clips the OUTPUT only —
+  // displacement can still SAMPLE neighbouring content for edge refraction.
+  const lensRegion = (el) => {
+    if (!el) return;
+    el.setAttribute("x", String(x / sw));
+    el.setAttribute("y", String(y / sh));
+    el.setAttribute("width", String(fullW / sw));
+    el.setAttribute("height", String(fullH / sh));
+  };
+  lensRegion(feLensMask);
+  lensRegion(feDispR);
+  lensRegion(feDispG);
+  lensRegion(feDispB);
+  lensRegion(feFinalBlur);
 
   // Displacement scale in the stage's objectBoundingBox units — exactly
   // matching Aave, whose filter also spans the full stage. scale=0.1 then
