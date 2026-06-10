@@ -162,16 +162,14 @@ function regenMap() {
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
-function updateFilterPrimitives(fullW, fullH, x, y) {
-  const sw = Math.max(1, stageRect.w);
-  const sh = Math.max(1, stageRect.h);
-
-  // The filter is applied to a full-stage source layer. Position the lens map
-  // within that full filter region, exactly like Aave's feImage placement path.
-  feMap.setAttribute("x", String(x / sw));
-  feMap.setAttribute("y", String(y / sh));
-  feMap.setAttribute("width", String(fullW / sw));
-  feMap.setAttribute("height", String(fullH / sh));
+function updateFilterPrimitives(fullW, fullH) {
+  // Safari is much more reliable when the filter region is the lens bbox and
+  // the displacement map fills that bbox. The underlying source is aligned by
+  // translating the DOM content inside the moving lens layer.
+  feMap.setAttribute("x", "0");
+  feMap.setAttribute("y", "0");
+  feMap.setAttribute("width", "1");
+  feMap.setAttribute("height", "1");
 
   const scale = state.scale;
   feDispR.setAttribute("scale", String(scale * (1 + 0.2 * state.chroma)));
@@ -180,15 +178,16 @@ function updateFilterPrimitives(fullW, fullH, x, y) {
 
   feSourceBlur.setAttribute(
     "stdDeviation",
-    `${state.blur / sw} ${state.blur / sh}`,
+    `${state.blur / Math.max(1, fullW)} ${state.blur / Math.max(1, fullH)}`,
   );
 
-  // This is the actual color pickup: sample the full SourceGraphic at an offset.
-  // If the source just below/near the lens is green, pickupSpec goes green.
+  // This still samples SourceGraphic, but now in the lens-local coordinate
+  // system. Because lensContent is the stage translated underneath the lens,
+  // offsetting SourceGraphic samples nearby/underlying scene colors.
   const ang = (state.specularAngle * Math.PI) / 180;
-  fePickupOffset.setAttribute("dx", String((state.pickupOffset * Math.cos(ang)) / sw));
-  fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / sh));
-  fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(sw, sh)));
+  fePickupOffset.setAttribute("dx", String((state.pickupOffset * Math.cos(ang)) / Math.max(1, fullW)));
+  fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / Math.max(1, fullH)));
+  fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(1, Math.max(fullW, fullH))));
 
   const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 2.8 : 2.2));
   const whiteA = Math.max(0, state.specular * (1 - state.colorPickup) * (darkMode ? 1.0 : 0.7));
@@ -218,26 +217,23 @@ function render() {
   const x = state.posX * stageRect.w - fullW / 2;
   const y = state.posY * stageRect.h - fullH / 2;
 
-  // Filter the full source layer, then clip the filtered result down to the
-  // lens region. This keeps SourceGraphic large enough for feOffset color
-  // pickup to sample surrounding/underlying content.
-  lensLayerEl.style.width = `${stageRect.w}px`;
-  lensLayerEl.style.height = `${stageRect.h}px`;
-  lensLayerEl.style.transform = "none";
-  lensLayerEl.style.clipPath = `inset(${y}px ${stageRect.w - (x + fullW)}px ${stageRect.h - (y + fullH)}px ${x}px round ${state.borderRadius}px)`;
-  lensLayerEl.style.webkitClipPath = lensLayerEl.style.clipPath;
-  lensContentEl.style.width = `${stageRect.w}px`;
-  lensContentEl.style.height = `${stageRect.h}px`;
-  lensContentEl.style.transform = "none";
-
-  for (const el of [frostVeilEl, lensOutlineEl]) {
+  for (const el of [lensLayerEl, frostVeilEl, lensOutlineEl]) {
     el.style.width = `${fullW}px`;
     el.style.height = `${fullH}px`;
     el.style.borderRadius = `${state.borderRadius}px`;
     el.style.transform = `translate(${x}px, ${y}px)`;
   }
+  lensLayerEl.style.clipPath = "none";
+  lensLayerEl.style.webkitClipPath = "none";
 
-  updateFilterPrimitives(fullW, fullH, x, y);
+  // The filtered SourceGraphic is the full scene translated underneath a moving
+  // lens-sized viewport. This keeps the lens and rendered glass in the same
+  // coordinate system on Safari/iOS.
+  lensContentEl.style.width = `${stageRect.w}px`;
+  lensContentEl.style.height = `${stageRect.h}px`;
+  lensContentEl.style.transform = `translate(${-x}px, ${-y}px)`;
+
+  updateFilterPrimitives(fullW, fullH);
   updateFrostVeil();
   applyFreshFilterId(false);
 

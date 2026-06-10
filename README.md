@@ -34,10 +34,12 @@ modules.
   - `feDisplacementMap` bends `SourceGraphic` from the map's R/G channels.
   - Three displacement passes are recombined for chromatic splitting.
 - A clipped live-DOM lens overlay.
-- Safari/WebKit filter cache busting:
+- Safari/WebKit compatibility:
   - Safari can cache filtered output by filter ID;
   - on Safari-like browsers the filter gets a fresh ID on every render/move so
-    dragging repaints instead of freezing.
+    dragging repaints instead of freezing;
+  - the filtered layer is lens-sized and moves with the outline, avoiding the
+    full-stage `clip-path` offset bugs seen in Safari/iOS.
 - Frost as a separate material/opacity veil.
 - Specular highlights driven by the displacement map's blue channel.
 - Directional Color Pickup:
