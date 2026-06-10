@@ -272,7 +272,11 @@
                   <feColorMatrix id="fePickupMatrix" in="pickupSpec" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="pickupBoost" />
                   <feColorMatrix id="feWhiteSpecMatrix" in="specMask" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0" result="whiteSpec" />
                   <feBlend in="lensBase" in2="pickupBoost" mode="screen" result="withPickup" />
-                  <feBlend in="withPickup" in2="whiteSpec" mode="screen" result="lensResult" />
+                  <feBlend in="withPickup" in2="whiteSpec" mode="screen" result="blended" />
+                  <!-- Final output blur. Safari gets a tiny smoothing pass to match
+                       Chromium's natural compositor anti-aliasing on the refracted
+                       output. JS toggles stdDeviation=0 for Chromium. -->
+                  <feGaussianBlur id="feFinalBlur" in="blended" stdDeviation="0" result="lensResult" />
                 </filter>
               </defs>
             </svg>

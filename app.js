@@ -75,6 +75,7 @@ const controlsEl = document.getElementById("controls");
 const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feSourceBlur = document.getElementById("feSourceBlur");
+const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
@@ -176,17 +177,25 @@ function updateFilterPrimitives(fullW, fullH) {
   feDispG.setAttribute("scale", String(scale * (1 + 0.1 * state.chroma)));
   feDispB.setAttribute("scale", String(scale));
 
-  // WebKit's feDisplacementMap samples SourceGraphic with sharper
-  // interpolation than Chromium, producing sharp piercing dashes where
-  // Chromium produces smooth refraction. A small Safari-only baseline blur
-  // on SourceGraphic anti-aliases the input so refracted output matches.
-  // Chromium gets no baseline blur — it interpolates well on its own and
-  // we don't want to soften Chrome's correct render.
-  const baseBlurPx = 0;
-  const totalBlur = state.blur + baseBlurPx;
   feSourceBlur.setAttribute(
     "stdDeviation",
-    `${totalBlur / Math.max(1, fullW)} ${totalBlur / Math.max(1, fullH)}`,
+    `${state.blur / Math.max(1, fullW)} ${state.blur / Math.max(1, fullH)}`,
+  );
+  // Safari-only sub-pixel smoothing of the *final* filter output. WebKit's
+  // compositor applies less anti-aliasing to the refracted result than
+  // Chromium's, so a very small post-filter blur reproduces Chromium's
+  // softness without destroying the displaced detail (unlike pre-blurring
+  // SourceGraphic).
+  // WebKit's compositor applies less sub-pixel anti-aliasing to the
+  // refracted output than Chromium's, so without this the WebKit lens
+  // shows visibly sharper dashes than Chromium. A small final-stage blur
+  // (engages WebKit's minimum kernel ~0.5px regardless of exact value)
+  // reproduces Chromium's softness without destroying the refraction
+  // signal. Chromium gets stdDev=0 so it's untouched.
+  const finalBlurPx = isSafariLike ? 0.25 : 0;
+  feFinalBlur.setAttribute(
+    "stdDeviation",
+    `${finalBlurPx / Math.max(1, fullW)} ${finalBlurPx / Math.max(1, fullH)}`,
   );
 
   // This still samples SourceGraphic, but now in the lens-local coordinate
