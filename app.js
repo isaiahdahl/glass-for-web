@@ -234,6 +234,18 @@ function render() {
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
+  // The displacement map's blue/specular channel is not part of the parity
+  // SVG composite, so make the highlight visibly controlled on the separate
+  // outline shell instead. This does not affect filter geometry/refraction.
+  lensOutlineEl.style.setProperty("--spec-angle", `${state.specularAngle}deg`);
+  lensOutlineEl.style.setProperty(
+    "--spec-opacity",
+    clamp01(state.edgeHighlight * 0.55).toFixed(3),
+  );
+  lensOutlineEl.style.setProperty(
+    "--glow-opacity",
+    clamp01(state.glow * 1.0).toFixed(3),
+  );
 
   // The separate lens layer is unused now (filter lives on the scene).
   lensLayerEl.style.display = "none";
