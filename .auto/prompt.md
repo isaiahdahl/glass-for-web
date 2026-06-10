@@ -200,25 +200,76 @@ changes.
 
 ## What's been tried
 
-(append here as you go — *with* approach + outcome + why it failed)
+(Newest at top.)
+
+- **WORKED**: `feGaussianBlur stdDeviation=0.25/W` as a *final* stage on the
+  filter (`feFinalBlur`), Safari-only. WebKit's compositor applies less
+  sub-pixel AA than Chromium's; this final blur matches Chromium's softness
+  without destroying the refraction. Worst-case pixel_diff_pct 0.98 -> 0.36.
+  (Any non-zero stdDev triggers the same minimum kernel — 0.0, 0.2, 0.35
+  all give identical output.)
+
+- **WORKED**: Drop the Safari-only pre-blur on SourceGraphic. With clip-path
+  in place the pre-blur did more harm than good (killed light-theme dashes).
+  Worst-case 5.04 -> 0.98.
+
+- **WORKED**: `clip-path: inset(0 round Npx)` on `.lensLayer` (Safari and
+  Chrome). WebKit doesn't clip filter output through `overflow:hidden +
+  border-radius`; the filter writes outside the rounded silhouette,
+  producing a hard dark rim where displacement pulls samples from outside
+  the bbox. Worst-case 5.04 -> 3.21 on light_center; 0.41 -> 0.37 overall.
+
+- **WORKED**: Soft `feGaussianBlur` on the displacement map after `feImage`.
+  Started 0.0015 (-2.5%), bumped to 0.005 (-5%), bumped to 0.015 (-2% more).
+
+- **NOT HELPFUL**: Anti-aliasing the alpha edge of the map in `glass.js`
+  (ramp 255->0 over 2 pixels). The hard rim was from displacement at the
+  silhouette, not the alpha discontinuity — clip-path made the difference.
+
+- **NOT HELPFUL**: Safari-only `state.scale * 0.88` displacement
+  compensation. WebKit's overshoot at small `scale` values was noise.
+
+- **REGRESSED**: Rounding lens position to integer pixels. Both browsers
+  ended up at same integer but the grid behind diverged at sub-pixel
+  positions and re-aligning broke parity.
+
+- **NOT HELPFUL**: Setting `box-shadow: none` on `.lensOutline`. The dark
+  rim was coming from the SVG filter itself, not the box-shadow.
+
+- **NOT HELPFUL**: Expanding the SVG filter region to `-0.2..1.4`.
+
+- **NOT HELPFUL**: Resizing the `<svg class="svgDefs">` to `width:100% height:100%`
+  with `viewBox="0 0 0 0"` (matching Aave's structure). Same metric.
 
 - (baseline) `objectBoundingBox` everywhere, lens as a separately positioned
   `.lensLayer` with `clip-path: none` and `filter: url(#glassSvgFilter)`.
-  Safari shows the lens as nearly transparent / no refraction visible.
+  Safari showed a hard dark rim around the lens with sharp piercing dashes.
+  Worst-case pixel_diff_pct ~1.14, light_center the worst.
+
+## Current state of the metric
+
+- worst-case `pixel_diff_pct`: 0.36 (was 1.14)
+- `edge_ratio` ~ 0.77 (slightly below the 0.8 threshold, hence a small
+  `parity_score` penalty of ~0.15)
+- All three scenarios under 0.4% diff
+- Aave cross-browser diff (their site): ~3.6% (theirs differs on lens position
+  between browser sessions — not directly comparable)
 
 ## Ideas backlog (also in `.auto/ideas.md`)
 
+Remaining (untried):
 - Adopt Aave's hole-and-fill compositing (apply filter to whole stage with
   feFlood/feComposite operator=out cut, instead of positioning a lens div).
+  Big restructure but probably closes the remaining 0.36% gap.
 - Switch `filterUnits`/`primitiveUnits` to `userSpaceOnUse` on Safari + add
-  the `feColorMatrix scaledMap` to compensate.
-- Replace `feGaussianBlur` on SourceGraphic with `-webkit-backdrop-filter`
-  on a separate div.
-- Try the `specularDark` path for dark mode (multiplicative instead of additive
-  with the negative-B colorMatrix).
-- Inspect WebKit's actual `<filter>` DOM after render via Playwright
-  (`page.evaluate(() => document.getElementById('glassSvgFilter').outerHTML)`)
-  to verify our attributes survived parsing.
+  the `feColorMatrix scaledMap` to compensate. Aave does this explicitly.
+- Try the `specularDark` path for dark mode (multiplicative instead of
+  additive with the negative-B colorMatrix). Aave's dark-mode branch.
+- `in=rawMap` instead of `in=map` for the spec mask on Safari (Aave does
+  this in `aave-glass.pretty.js` line 1945).
+- Use `-webkit-backdrop-filter: blur(N)` on a separate div for the blur
+  slider, instead of `feGaussianBlur` on SourceGraphic. The slider would
+  feel more native and the blur values would match between browsers.
 
 ## Loop discipline
 
