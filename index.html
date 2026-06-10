@@ -246,7 +246,12 @@
               <defs>
                 <filter id="glassSvgFilter" filterUnits="objectBoundingBox" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB" x="0" y="0" width="1" height="1">
                   <feFlood flood-color="rgb(128,128,128)" flood-opacity="1" result="mapBg" />
-                  <feImage id="feMap" preserveAspectRatio="none" result="rawMap" />
+                  <feImage id="feMap" preserveAspectRatio="none" result="rawMapUnfiltered" />
+                  <!-- Anti-alias the displacement map. WebKit samples it with sharper interpolation
+                       than Chromium, which makes the refraction read as piercing edges; a tiny
+                       blur (under one map pixel) on the map removes that aliasing without softening
+                       the refraction shape. -->
+                  <feGaussianBlur id="feMapBlur" in="rawMapUnfiltered" stdDeviation="0.0015" result="rawMap" />
                   <feComposite in="rawMap" in2="mapBg" operator="over" result="map" />
 
                   <feGaussianBlur id="feSourceBlur" in="SourceGraphic" stdDeviation="0 0" result="blurred" />

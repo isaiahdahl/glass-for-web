@@ -16,13 +16,21 @@ const ROOT = join(__dirname, "..", "..");
 const SHOTS = join(ROOT, ".auto", "shots");
 
 const URL_BASE = process.env.GLASS_URL || "http://127.0.0.1:8132/index.html";
+const AAVE_URL = process.env.AAVE_URL || "https://aave.com/design/building-glass-for-the-web";
+const SKIP_AAVE = process.env.SKIP_AAVE === "1";
 const VIEWPORT = { width: 1100, height: 760 };
 
-// Deterministic scenarios. Each picks a lens position + theme.
+// Deterministic scenarios. Each picks a lens position + theme + state
+// overrides. We pick high-scale/high-chroma settings to amplify the WebKit
+// vs Chromium rendering differences (sharp piercing dashes vs soft refraction).
 const SCENARIOS = [
-  { id: "dark_colorblob", theme: "dark", posX: 0.35, posY: 0.45 },
-  { id: "dark_center",    theme: "dark", posX: 0.5,  posY: 0.5  },
-  { id: "light_center",   theme: "light", posX: 0.5, posY: 0.5  },
+  // Dark over a color blob, slightly stronger refraction — makes piercing
+  // dashes inside the lens vs. proper refraction maximally distinguishable.
+  { id: "dark_colorblob", theme: "dark", state: { posX: 0.35, posY: 0.45, scale: 0.14, chroma: 0.4 } },
+  // Dark center with default refraction settings.
+  { id: "dark_center",    theme: "dark", state: { posX: 0.5,  posY: 0.5,  scale: 0.10, chroma: 0.2 } },
+  // Light center matches Aave's reference screenshot.
+  { id: "light_center",   theme: "light", state: { posX: 0.5,  posY: 0.5,  scale: 0.10, chroma: 0.2 } },
 ];
 
 // Ensure shots dir exists & is clean each run.
@@ -46,10 +54,10 @@ async function setup(browserCtx, browserName) {
 }
 
 async function captureScenario(page, browserName, scenario) {
-  // Force theme + lens position via the playground's public API.
+  // Force theme + lens state via the playground's public API.
   await page.evaluate((s) => {
     window.__glass.setTheme(s.theme);
-    window.__glass.set({ posX: s.posX, posY: s.posY });
+    window.__glass.set(s.state);
   }, scenario);
   // Give the filter pipeline two animation frames to settle.
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -59,7 +67,19 @@ async function captureScenario(page, browserName, scenario) {
   const renderMs = Date.now() - t0;
   const file = join(SHOTS, `${browserName}_${scenario.id}.png`);
   writeFileSync(file, buf);
-  return { buf, file, renderMs };
+
+  // Pull the lens bbox in stage-local CSS pixels. We crop diffs to this
+  // exact region — small numerical differences inside the lens are the
+  // signal we care about, but they get washed out across the full stage.
+  const bbox = await page.evaluate(() => {
+    const s = window.__glass.state;
+    const rect = document.getElementById("stage").getBoundingClientRect();
+    const fullW = 2 * s.width, fullH = 2 * s.height;
+    const x = s.posX * rect.width - fullW / 2;
+    const y = s.posY * rect.height - fullH / 2;
+    return { x, y, w: fullW, h: fullH, stageW: rect.width, stageH: rect.height };
+  });
+  return { buf, file, renderMs, bbox };
 }
 
 // Decode PNG → ImageData-like object.
@@ -109,12 +129,12 @@ function diffPct(pngA, pngB) {
   return { pct, diff, w, h };
 }
 
-// Crop the centered fraction of a decoded PNG (returns a new PNG object).
-function cropCenter(png, fracW, fracH) {
-  const w = Math.max(1, Math.floor(png.width * fracW));
-  const h = Math.max(1, Math.floor(png.height * fracH));
-  const x0 = Math.floor((png.width - w) / 2);
-  const y0 = Math.floor((png.height - h) / 2);
+// Crop an arbitrary axis-aligned rectangle, clamped to image bounds.
+function cropRect(png, x0, y0, w, h) {
+  x0 = Math.max(0, Math.min(png.width - 1, x0));
+  y0 = Math.max(0, Math.min(png.height - 1, y0));
+  w = Math.max(1, Math.min(png.width - x0, w));
+  h = Math.max(1, Math.min(png.height - y0, h));
   const out = new PNG({ width: w, height: h });
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -186,12 +206,32 @@ async function main() {
     const { pct, diff, w: dw, h: dh } = diffPct(pngC, pngW);
     pixelDiffPcts.push(pct);
 
-    // Lens-region only diff: much more sensitive than full-stage diff
-    // because background is identical and dilutes the signal.
-    const lensCropC = cropCenter(pngC, 0.5, 0.5);
-    const lensCropW = cropCenter(pngW, 0.5, 0.5);
+    // Lens-region diff: crop to the actual lens bbox (from window.__glass
+    // state), with a small padding margin to catch edge-refraction effects.
+    // PNG resolution may be devicePixelRatio scaled vs CSS pixels, so we
+    // scale the bbox to match.
+    const sx = pngC.width / c.bbox.stageW;
+    const sy = pngC.height / c.bbox.stageH;
+    const pad = 8; // CSS px padding to include the soft outer falloff.
+    const lensCropC = cropRect(
+      pngC,
+      Math.floor((c.bbox.x - pad) * sx),
+      Math.floor((c.bbox.y - pad) * sy),
+      Math.ceil((c.bbox.w + 2 * pad) * sx),
+      Math.ceil((c.bbox.h + 2 * pad) * sy),
+    );
+    const lensCropW = cropRect(
+      pngW,
+      Math.floor((w.bbox.x - pad) * sx),
+      Math.floor((w.bbox.y - pad) * sy),
+      Math.ceil((w.bbox.w + 2 * pad) * sx),
+      Math.ceil((w.bbox.h + 2 * pad) * sy),
+    );
     const lensDiff = diffPct(lensCropC, lensCropW);
     lensDiffPcts.push(lensDiff.pct);
+    // Save lens crops side by side for visual review.
+    writeFileSync(join(SHOTS, `lens_chromium_${scenario.id}.png`), PNG.sync.write(lensCropC));
+    writeFileSync(join(SHOTS, `lens_webkit_${scenario.id}.png`), PNG.sync.write(lensCropW));
 
     // Save diff image.
     const diffPng = new PNG({ width: dw, height: dh });
@@ -219,6 +259,53 @@ async function main() {
   console.log(`METRIC chromium_lens_contrast=${medCContrast.toFixed(3)}`);
   console.log(`METRIC webkit_render_ms=${median(webkitRenderMs)}`);
   console.log(`METRIC chromium_render_ms=${median(chromiumRenderMs)}`);
+
+  // ---- Aave reference: screenshot their site's glass component in both
+  // browsers, diff them against each other. This is a sanity check (Aave
+  // achieves true parity, so diff should be near zero) and a reference set
+  // of PNGs we can stare at while iterating. Network-bound; skip if it
+  // fails (e.g. offline) or SKIP_AAVE=1.
+  let aaveDiff = NaN, aaveAvail = 0;
+  if (!SKIP_AAVE) {
+    try {
+      const aaveBufs = {};
+      for (const [name, page] of [["chromium", cr.page], ["webkit", wk.page]]) {
+        await page.goto(AAVE_URL, { waitUntil: "load", timeout: 30000 });
+        // Wait until at least one glass container is in the DOM AND its inner
+        // filter image has resolved (Aave's filter is async).
+        await page.waitForSelector("[data-aave-glass-container]", { timeout: 15000 });
+        await page.waitForFunction(
+          () => {
+            const c = document.querySelector("[data-aave-glass-container]");
+            if (!c) return false;
+            const img = c.querySelector("feImage");
+            const href = img?.getAttribute("href");
+            return !!href && href.length > 100; // map data URL present
+          },
+          null,
+          { timeout: 15000 }
+        );
+        await page.evaluate(() => new Promise((r) => setTimeout(r, 600)));
+        const el = await page.$("[data-aave-glass-container]");
+        const buf = await el.screenshot({ type: "png" });
+        writeFileSync(join(SHOTS, `aave_${name}.png`), buf);
+        aaveBufs[name] = buf;
+      }
+      const a = decode(aaveBufs.chromium);
+      const b = decode(aaveBufs.webkit);
+      const r = diffPct(a, b);
+      const diffPng = new PNG({ width: r.w, height: r.h });
+      diffPng.data = r.diff.data;
+      writeFileSync(join(SHOTS, `aave_diff.png`), PNG.sync.write(diffPng));
+      aaveDiff = r.pct;
+      aaveAvail = 1;
+      console.error(`[aave] cross_browser_diff=${aaveDiff.toFixed(3)}%`);
+    } catch (e) {
+      console.error(`[aave] capture failed: ${e.message}`);
+    }
+  }
+  console.log(`METRIC aave_cross_browser_diff=${isFinite(aaveDiff) ? aaveDiff.toFixed(4) : "NaN"}`);
+  console.log(`METRIC aave_reference_available=${aaveAvail}`);
 
   if (errors.length) {
     console.error("--- runtime errors ---");
