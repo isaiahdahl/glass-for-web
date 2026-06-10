@@ -130,22 +130,31 @@
         pointer-events: none;
       }
       .lensOutline::before {
-        /* Directional specular streak. Controlled by Edge Highlight +
-           Specular Angle, but lives outside the SVG filter so refraction
-           alignment cannot move. */
+        /* Directional specular, clipped to a rounded-rectangle rim band.
+           This must NOT cross the center of the glass; it is an edge glint. */
+        border: 5px solid transparent;
         background:
           linear-gradient(
             var(--spec-angle),
             transparent 0%,
-            transparent 38%,
-            rgba(255,255,255,0.0) 43%,
-            rgba(255,255,255,0.72) 49%,
-            rgba(255,255,255,0.32) 52%,
-            transparent 61%,
+            transparent 22%,
+            rgba(255,255,255,0.20) 38%,
+            rgba(255,255,255,0.95) 49%,
+            rgba(255,255,255,0.24) 60%,
+            transparent 78%,
             transparent 100%
-          );
+          ) border-box;
         opacity: var(--spec-opacity);
         mix-blend-mode: screen;
+        /* Safari/WebKit-friendly ring mask: visible in the border band only. */
+        -webkit-mask:
+          linear-gradient(#000 0 0) padding-box,
+          linear-gradient(#000 0 0) border-box;
+        -webkit-mask-composite: xor;
+        mask:
+          linear-gradient(#000 0 0) padding-box,
+          linear-gradient(#000 0 0) border-box;
+        mask-composite: exclude;
       }
       .lensOutline::after {
         /* Soft upper/edge sheen. Controlled mainly by Glow. */
