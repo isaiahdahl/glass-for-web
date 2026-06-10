@@ -282,10 +282,14 @@ async function main() {
     console.log(`METRIC scn_${scenario.id}_chromium_contrast=${cContrast.toFixed(3)}`);
   }
 
-  // Aggregate metrics. Primary is the median lens-region diff — that's where
-  // the WebKit failure shows up most visibly.
+  // Aggregate metrics. Primary is the WORST-CASE lens-region diff (max).
+  // We care about every scenario looking right, not just the typical one
+  // — a regression that destroys one scenario shouldn't be hidden by
+  // medians/means over scenarios that happen to still match.
   const medDiff = median(pixelDiffPcts);
-  const medLensDiff = median(lensDiffPcts);
+  const maxLensDiff = Math.max(...lensDiffPcts);
+  const meanLensDiff = lensDiffPcts.reduce((a, b) => a + b, 0) / lensDiffPcts.length;
+  const medLensDiff = maxLensDiff;
   const medWContrast = median(webkitContrasts);
   const medCContrast = median(chromiumContrasts);
 
@@ -298,6 +302,7 @@ async function main() {
   const edgePenalty = Math.max(0, 0.8 - medEdgeRatio) * 5; // 5%/0.2 ratio gap
   const composite = medLensDiff + edgePenalty;
   console.log(`METRIC pixel_diff_pct=${medLensDiff.toFixed(4)}`);
+  console.log(`METRIC pixel_diff_pct_mean=${meanLensDiff.toFixed(4)}`);
   console.log(`METRIC stage_diff_pct=${medDiff.toFixed(4)}`);
   console.log(`METRIC parity_score=${composite.toFixed(4)}`);
   console.log(`METRIC edge_ratio=${medEdgeRatio.toFixed(4)}`);

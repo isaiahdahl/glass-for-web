@@ -182,7 +182,7 @@ function updateFilterPrimitives(fullW, fullH) {
   // on SourceGraphic anti-aliases the input so refracted output matches.
   // Chromium gets no baseline blur — it interpolates well on its own and
   // we don't want to soften Chrome's correct render.
-  const baseBlurPx = isSafariLike ? 0.2 : 0;
+  const baseBlurPx = 0;
   const totalBlur = state.blur + baseBlurPx;
   feSourceBlur.setAttribute(
     "stdDeviation",
