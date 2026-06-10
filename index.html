@@ -251,7 +251,7 @@
                        than Chromium, which makes the refraction read as piercing edges; a tiny
                        blur (under one map pixel) on the map removes that aliasing without softening
                        the refraction shape. -->
-                  <feGaussianBlur id="feMapBlur" in="rawMapUnfiltered" stdDeviation="0.0015" result="rawMap" />
+                  <feGaussianBlur id="feMapBlur" in="rawMapUnfiltered" stdDeviation="0.005" result="rawMap" />
                   <feComposite in="rawMap" in2="mapBg" operator="over" result="map" />
 
                   <feGaussianBlur id="feSourceBlur" in="SourceGraphic" stdDeviation="0 0" result="blurred" />
