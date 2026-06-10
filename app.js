@@ -143,6 +143,10 @@ function updateFilterPrimitives(fullW, fullH) {
   feMap.setAttribute("width", "1");
   feMap.setAttribute("height", "1");
 
+  // Displacement scale (objectBoundingBox units, exactly matching Aave's
+  // `scale` variable). A sweep vs Aave's live WebKit render showed our
+  // refraction is within ~10% of theirs at the same scale value — inside the
+  // render-pipeline noise floor — so we keep the variable 1:1.
   const scale = state.scale;
   feDispR.setAttribute("scale", String(scale * (1 + 0.2 * state.chroma)));
   feDispG.setAttribute("scale", String(scale * (1 + 0.1 * state.chroma)));
@@ -157,7 +161,10 @@ function updateFilterPrimitives(fullW, fullH) {
   // the same characteristic), so this final smoothing actually IMPROVES
   // parity with Aave's live render, not just internal Chrome/WebKit parity.
   // Removing it regresses the Aave diff (0.55% -> 0.94%).
-  const finalBlurPx = isSafariLike ? 0.25 : 0;
+  // Safari-only final-output blur, tuned to Aave's live WebKit render. Their
+  // refracted interior is slightly softer than a raw feDisplacementMap on
+  // WebKit; a sweep against their page minimised the diff at ~0.75px.
+  const finalBlurPx = isSafariLike ? 0.75 : 0;
   if (feFinalBlur) {
     feFinalBlur.setAttribute(
       "stdDeviation",

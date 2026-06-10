@@ -164,8 +164,21 @@ async function captureAave(theme) {
   });
   const el = handle.asElement();
   await el.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(1600); // let the map bake + filter settle
+  await page.waitForTimeout(800);
+  // CRITICAL: Aave's playground only applies the displacement filter after a
+  // pointer interaction moves the lens (a static headless load shows the bare
+  // lens with NO refraction). We drag the lens a little and back to centre so
+  // the filter renders, leaving the lens centred for a fair comparison.
   const box = await el.boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx + 30, cy + 20, { steps: 6 });
+  await page.mouse.move(cx - 20, cy - 15, { steps: 6 });
+  await page.mouse.move(cx, cy, { steps: 6 }); // back to exact centre
+  await page.mouse.up();
+  await page.waitForTimeout(900); // let the filter settle at centre
   const buf = await el.screenshot({ type: "png" });
   await b.close();
   const sideDevice = Math.round(box.height * 2);
