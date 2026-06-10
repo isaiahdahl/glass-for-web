@@ -84,10 +84,10 @@
         position: absolute;
         inset: 0;
         overflow: hidden;
-        background-image: var(--scene-image);
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
+        background-image: var(--color-image), var(--scene-image);
+        background-size: cover, cover;
+        background-position: center, center;
+        background-repeat: no-repeat, no-repeat;
       }
       .scene,
       .lensContent {
@@ -203,10 +203,12 @@
       }
       body:not(.dark) .stage {
         --scene-image: url("./assets/demo-bg.png");
+        --color-image: url("./assets/color-bg-light.svg");
         --frost-color: #e6e0ff;
       }
       body.dark .stage {
         --scene-image: url("./assets/demo-bg-dark.png");
+        --color-image: url("./assets/color-bg-dark.svg");
         --frost-color: #05030d;
       }
       .theme-toggle:hover { border-color: var(--primary); }

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 342 320" width="342" height="320">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#45ff7a" stop-opacity="0.34"/><stop offset="0.38" stop-color="#45ff7a" stop-opacity="0.28"/><stop offset="1" stop-color="#45ff7a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="b" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#55b7ff" stop-opacity="0.30"/><stop offset="0.40" stop-color="#55b7ff" stop-opacity="0.24"/><stop offset="1" stop-color="#55b7ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="p" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ff4ec0" stop-opacity="0.30"/><stop offset="0.40" stop-color="#ff4ec0" stop-opacity="0.24"/><stop offset="1" stop-color="#ff4ec0" stop-opacity="0"/></radialGradient>
+    <radialGradient id="o" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ff9f43" stop-opacity="0.27"/><stop offset="0.38" stop-color="#ff9f43" stop-opacity="0.22"/><stop offset="1" stop-color="#ff9f43" stop-opacity="0"/></radialGradient>
+    <radialGradient id="v" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#9b5cff" stop-opacity="0.28"/><stop offset="0.40" stop-color="#9b5cff" stop-opacity="0.22"/><stop offset="1" stop-color="#9b5cff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <circle cx="103" cy="98" r="82" fill="url(#g)"/>
+  <circle cx="301" cy="82" r="72" fill="url(#b)"/>
+  <circle cx="335" cy="271" r="79" fill="url(#p)"/>
+  <circle cx="72" cy="270" r="72" fill="url(#o)"/>
+  <circle cx="195" cy="318" r="68" fill="url(#v)"/>
+  <rect x="82" y="38" width="48" height="45" rx="4" fill="#ff3b6b" opacity="0.94" transform="rotate(-12 106 60.5)"/>
+  <rect x="192" y="224" width="55" height="35" rx="17.5" fill="#22d3ee" opacity="0.94"/>
+  <circle cx="60" cy="159" r="19" fill="#a3e635" opacity="0.94"/>
+  <rect x="274" y="96" width="41" height="38" rx="3" fill="#f59e0b" opacity="0.94" transform="rotate(18 294.5 115)"/>
+  <rect x="150" y="83" width="45" height="29" rx="6" fill="#8b5cf6" opacity="0.94" transform="rotate(-6 172.5 97.5)"/>
+</svg>

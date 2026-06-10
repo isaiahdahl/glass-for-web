@@ -115,9 +115,10 @@ function forceSafariFilterRefresh() {
 
 // ── live DOM scene ───────────────────────────────────────────────────────
 function buildScene(container) {
-  // Aave's playground source is just the demo background image (the dashed
-  // grid). No color blobs — those were ours for the color-pickup extension,
-  // removed for exact parity. The .scene / .lensContent CSS paints the bg.
+  // Keep the filtered scene's DOM geometry identical to the exact-parity base.
+  // Color blobs/chips are painted as CSS background image layers instead; DOM
+  // children can change WebKit's SVG filter source bounding box and offset the
+  // displacement map from the visible lens.
   container.replaceChildren();
 }
 
