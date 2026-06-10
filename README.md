@@ -5,10 +5,8 @@ A small static demo of an Aave/Apple-style glass refraction effect using the
 `feImage`, then used by `feDisplacementMap` to refract DOM content inside a
 rounded, draggable lens.
 
-The current implementation is intentionally not a canvas/WebGL main renderer.
-The visible glass lens in `index.html` is a DOM layer filtered through SVG, so it
-is much closer to the architecture described in Aave's “Building Glass for the
-Web” article.
+The visible glass lens is a DOM layer filtered through SVG. It is not rendered
+with a GPU/canvas shader.
 
 ## Live demo
 
@@ -35,15 +33,17 @@ modules.
   - `feImage` loads the generated map.
   - `feDisplacementMap` bends `SourceGraphic` from the map's R/G channels.
   - Three displacement passes are recombined for chromatic splitting.
-- A clipped live-DOM lens overlay rather than a WebGL/canvas texture.
-- Safari-style filter-id cache busting when the map changes.
+- A clipped live-DOM lens overlay.
+- Safari/WebKit filter cache busting:
+  - Safari can cache filtered output by filter ID;
+  - on Safari-like browsers the filter gets a fresh ID on every render/move so
+    dragging repaints instead of freezing.
 - Frost as a separate material/opacity veil.
 - Specular highlights driven by the displacement map's blue channel.
-- Directional Color Pickup without WebGL:
+- Directional Color Pickup:
   - the SVG filter offsets the actual full-stage `SourceGraphic`, masks it with
     the map's blue specular channel, then blends it into the lens;
-  - nearby/underlying source colors therefore tint the specular highlight (for
-    example, a green source just outside the lens produces a green highlight).
+  - nearby/underlying source colors therefore tint the specular highlight.
 - Dark/light theme tuning for different frost behavior.
 
 ## Files
@@ -52,13 +52,13 @@ modules.
 |------|------|
 | `index.html` | Static page, SVG filter definitions, layout, styling, controls |
 | `app.js` | UI state, drag handling, DOM scene construction, SVG filter updates, map regeneration |
-| `glass.js` | Reverse-engineered displacement map generator; older WebGL renderer code remains for reference/fallback experiments |
+| `glass.js` | Reverse-engineered displacement map generator |
 | `serve.sh` | Simple local static server |
 | `.nojekyll` | GitHub Pages static-file passthrough |
 
 ## Implementation note
 
-The map generator is the reverse-engineered Aave displacement-map math. The main
-left-panel rendering path now follows the article's DOM/SVG strategy instead of
-bending a canvas texture with WebGL. The WebGL renderer code still exists in
-`glass.js` for reference, but `app.js` no longer imports or uses it for the demo.
+The map generator is the reverse-engineered displacement-map math. The main
+left-panel rendering path follows the DOM/SVG strategy: `feImage` supplies the
+map, `feDisplacementMap` refracts the live `SourceGraphic`, and the result is
+clipped to the moving lens region.

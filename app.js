@@ -59,6 +59,9 @@ let filterVersion = 0;
 let mapUrl = "";
 let stageRect = { w: 0, h: 0 };
 
+const ua = navigator.userAgent;
+const isSafariLike = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox|Android/i.test(ua);
+
 const stageEl = document.getElementById("stage");
 const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
@@ -89,6 +92,19 @@ function setHref(el, href) {
 
 function clamp01(v) {
   return Math.max(0, Math.min(1, v));
+}
+
+function applyFreshFilterId(force = false) {
+  // Safari/WebKit caches SVG filter output by filter id. Moving the lens only
+  // changes primitive attributes (`feImage x/y`, `clip-path`, offsets), so
+  // Safari can keep serving a stale render unless the id changes.
+  if (!force && !isSafariLike) return;
+  filterVersion += 1;
+  const nextId = `${FILTER_BASE_ID}-${filterVersion}`;
+  filterEl.id = nextId;
+  const url = `url(#${nextId})`;
+  lensLayerEl.style.filter = url;
+  lensLayerEl.style.webkitFilter = url;
 }
 
 // ── live DOM scene ───────────────────────────────────────────────────────
@@ -140,13 +156,9 @@ function regenMap() {
   mapImg.src = mapUrl;
   setHref(feMap, mapUrl);
 
-  // Aave bumps filter IDs as one of the Safari cache-busting workarounds.
-  // Do the same whenever the map data itself changes.
-  filterVersion += 1;
-  const nextId = `${FILTER_BASE_ID}-${filterVersion}`;
-  filterEl.id = nextId;
-  lensLayerEl.style.filter = `url(#${nextId})`;
-  lensLayerEl.style.webkitFilter = `url(#${nextId})`;
+  // Always refresh when the map data itself changes. Safari additionally gets
+  // a fresh id on every render/move below.
+  applyFreshFilterId(true);
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -227,6 +239,7 @@ function render() {
 
   updateFilterPrimitives(fullW, fullH, x, y);
   updateFrostVeil();
+  applyFreshFilterId(false);
 
   const mr = mapStageEl.getBoundingClientRect();
   mapImg.style.width = `${fullW}px`;
