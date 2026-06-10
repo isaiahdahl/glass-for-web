@@ -47,7 +47,6 @@ const state = {
 };
 
 let darkMode = false;
-let filterVersion = 0;
 let mapUrl = "";
 let stageRect = { w: 0, h: 0 };
 
@@ -63,7 +62,6 @@ const mapStageEl = document.getElementById("mapStage");
 const mapImg = document.getElementById("mapBlob");
 const controlsEl = document.getElementById("controls");
 
-const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
@@ -83,21 +81,19 @@ function clamp01(v) {
   return Math.max(0, Math.min(1, v));
 }
 
-function applyFreshFilterId(force = false) {
-  // Safari/WebKit caches SVG filter output by filter id. Moving the lens only
-  // changes primitive attributes (`feImage x/y`, `clip-path`, offsets), so
-  // Safari can keep serving a stale render unless the id changes.
-  if (!force && !isSafariLike) return;
-  filterVersion += 1;
-  const nextId = `${FILTER_BASE_ID}-${filterVersion}`;
-  filterEl.id = nextId;
-  const url = `url(#${nextId})`;
-  // The filter is applied to the full-stage scene (Aave's approach): the
-  // displacement map sits at the lens sub-region and refracts the real stage
-  // content around it, so edge refraction samples neighbouring grid instead
-  // of empty space.
+let filterApplied = false;
+function applyFreshFilterId() {
+  // Stable filter id (no cycling). Cycling the id on every update dropped the
+  // filter reference for a frame on Safari -> a visible flicker where "nothing
+  // applies", made worse by the hole-and-fill (the lens briefly shows its
+  // empty hole). Aave doesn't cycle ids either; updating feImage href / the
+  // primitive attributes is enough to make WebKit re-render. We only set the
+  // filter URL on the scene once.
+  if (filterApplied) return;
+  const url = `url(#${FILTER_BASE_ID})`;
   sceneEl.style.filter = url;
   sceneEl.style.webkitFilter = url;
+  filterApplied = true;
 }
 
 // ── live DOM scene ───────────────────────────────────────────────────────
@@ -132,10 +128,7 @@ function regenMap() {
   mapUrl = mapCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
   setHref(feMap, mapUrl);
-
-  // Always refresh when the map data itself changes. Safari additionally gets
-  // a fresh id on every render/move below.
-  applyFreshFilterId(true);
+  applyFreshFilterId();
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -222,7 +215,7 @@ function render() {
   lensLayerEl.style.display = "none";
 
   updateFilterPrimitives(fullW, fullH);
-  applyFreshFilterId(false);
+  applyFreshFilterId();
 
   const mr = mapStageEl.getBoundingClientRect();
   mapImg.style.width = `${fullW}px`;
