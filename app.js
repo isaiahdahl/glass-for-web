@@ -176,9 +176,17 @@ function updateFilterPrimitives(fullW, fullH) {
   feDispG.setAttribute("scale", String(scale * (1 + 0.1 * state.chroma)));
   feDispB.setAttribute("scale", String(scale));
 
+  // WebKit's feDisplacementMap samples SourceGraphic with sharper
+  // interpolation than Chromium, producing sharp piercing dashes where
+  // Chromium produces smooth refraction. A small Safari-only baseline blur
+  // on SourceGraphic anti-aliases the input so refracted output matches.
+  // Chromium gets no baseline blur — it interpolates well on its own and
+  // we don't want to soften Chrome's correct render.
+  const baseBlurPx = isSafariLike ? 0.2 : 0;
+  const totalBlur = state.blur + baseBlurPx;
   feSourceBlur.setAttribute(
     "stdDeviation",
-    `${state.blur / Math.max(1, fullW)} ${state.blur / Math.max(1, fullH)}`,
+    `${totalBlur / Math.max(1, fullW)} ${totalBlur / Math.max(1, fullH)}`,
   );
 
   // This still samples SourceGraphic, but now in the lens-local coordinate
