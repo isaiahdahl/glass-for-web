@@ -2,7 +2,7 @@
 //
 // The map's R/G channels encode a normalized refraction direction; B encodes
 // specular/glow intensity. The visible renderer is the SVG filter in index.html
-// (`feImage` + `feDisplacementMap`), not WebGL.
+// (`feImage` + `feDisplacementMap`).
 
 // ─────────────────────────────────────────────────────────────────────────
 // Math helpers
