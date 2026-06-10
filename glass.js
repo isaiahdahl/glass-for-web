@@ -114,7 +114,6 @@ export function generateDisplacementMap(canvas, opts) {
         (O > 0 ? Math.sqrt(O) : 0) + Math.min(Math.max(M, Cc), 0) - S;
 
       if (!sdfBoundary || sdf < 0) {
-        data[t + 3] = 255;
         let dx, dy;
         if (F) {
           dx = Math.sign(ox) * domeGradient(g, F.Rx, F.scaleX);
@@ -192,10 +191,14 @@ export function generateDisplacementMap(canvas, opts) {
         data[t] = 128;
         data[t + 1] = 128;
         data[t + 2] = 128;
-        // Transparent outside the rounded lens so the SVG map can be composited
-        // cleanly over the neutral map background.
-        data[t + 3] = 0;
       }
+      // Aave's baker writes alpha = 255 for EVERY pixel (opaque grey outside
+      // the lens), never transparent. A transparent edge makes WebKit's
+      // feImage sample premultiplied RGB toward 0 at the silhouette
+      // (grey fades to black as alpha drops), which feDisplacementMap reads
+      // as a large displacement -> the hard dark rim. Keeping the whole map
+      // opaque removes that at the source.
+      data[t + 3] = 255;
     }
   }
 
