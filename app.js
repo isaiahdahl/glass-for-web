@@ -206,7 +206,13 @@ function updateFilterPrimitives(fullW, fullH) {
   // Safari-only final-output blur, tuned to Aave's live WebKit render. Their
   // refracted interior is slightly softer than a raw feDisplacementMap on
   // WebKit; a sweep against their page minimised the diff at ~0.75px.
-  const finalBlurPx = isSafariLike ? 0.5 : 0;
+  // No artificial final blur. An earlier Safari-only smoothing pass was tuned
+  // against a broken (non-refracting) reference and made the refracted dots
+  // softer/larger than Aave's on real Safari. With the correct architecture
+  // the raw displacement output already matches Aave's dot sharpness, so we
+  // keep it crisp (the pixelmatch metric mildly prefers blur only because it
+  // hides sub-pixel AA noise, not because it's more faithful).
+  const finalBlurPx = 0;
   if (feFinalBlur) {
     feFinalBlur.setAttribute(
       "stdDeviation",
