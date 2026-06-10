@@ -1,0 +1,212 @@
+// .auto/tools/measure.mjs
+// Renders the demo in Chromium + WebKit at fixed lens states, screenshots the
+// .stage element, and emits METRIC lines for autoresearch.
+//
+// Output: `METRIC name=value` lines + saves PNGs into .auto/shots/.
+
+import { chromium, webkit } from "playwright";
+import { PNG } from "pngjs";
+import pixelmatch from "pixelmatch";
+import { writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..", "..");
+const SHOTS = join(ROOT, ".auto", "shots");
+
+const URL_BASE = process.env.GLASS_URL || "http://127.0.0.1:8132/index.html";
+const VIEWPORT = { width: 1100, height: 760 };
+
+// Deterministic scenarios. Each picks a lens position + theme.
+const SCENARIOS = [
+  { id: "dark_colorblob", theme: "dark", posX: 0.35, posY: 0.45 },
+  { id: "dark_center",    theme: "dark", posX: 0.5,  posY: 0.5  },
+  { id: "light_center",   theme: "light", posX: 0.5, posY: 0.5  },
+];
+
+// Ensure shots dir exists & is clean each run.
+if (existsSync(SHOTS)) rmSync(SHOTS, { recursive: true, force: true });
+mkdirSync(SHOTS, { recursive: true });
+
+async function setup(browserCtx, browserName) {
+  const page = await browserCtx.newPage({ viewport: VIEWPORT });
+  // Fail fast on JS errors so we notice if we broke the page.
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(`console.error: ${msg.text()}`);
+  });
+  const t0 = Date.now();
+  await page.goto(URL_BASE, { waitUntil: "load", timeout: 15000 });
+  // Wait until our bootstrap sets the global.
+  await page.waitForFunction("window.__ready === true", null, { timeout: 10000 });
+  const readyMs = Date.now() - t0;
+  return { page, errors, readyMs };
+}
+
+async function captureScenario(page, browserName, scenario) {
+  // Force theme + lens position via the playground's public API.
+  await page.evaluate((s) => {
+    window.__glass.setTheme(s.theme);
+    window.__glass.set({ posX: s.posX, posY: s.posY });
+  }, scenario);
+  // Give the filter pipeline two animation frames to settle.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const stage = await page.$("#stage");
+  const t0 = Date.now();
+  const buf = await stage.screenshot({ type: "png" });
+  const renderMs = Date.now() - t0;
+  const file = join(SHOTS, `${browserName}_${scenario.id}.png`);
+  writeFileSync(file, buf);
+  return { buf, file, renderMs };
+}
+
+// Decode PNG → ImageData-like object.
+function decode(buf) {
+  return PNG.sync.read(buf);
+}
+
+// Per-channel mean & stddev of luminance for a center-crop.
+function lensContrastStat(png, fraction = 0.4) {
+  const { width: w, height: h, data } = png;
+  const cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+  const halfW = Math.floor(w * fraction / 2);
+  const halfH = Math.floor(h * fraction / 2);
+  const x0 = cx - halfW, y0 = cy - halfH;
+  const x1 = cx + halfW, y1 = cy + halfH;
+  let sum = 0, sum2 = 0, n = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      sum += lum;
+      sum2 += lum * lum;
+      n++;
+    }
+  }
+  const mean = sum / n;
+  const variance = sum2 / n - mean * mean;
+  const stdev = Math.sqrt(Math.max(0, variance));
+  return { mean, stdev, n };
+}
+
+function diffPct(pngA, pngB) {
+  // Both expected same size since same selector + same viewport.
+  const w = Math.min(pngA.width, pngB.width);
+  const h = Math.min(pngA.height, pngB.height);
+  const diff = new PNG({ width: w, height: h });
+  // Crop both to (w,h) by reusing their buffers when they already match.
+  let dataA = pngA.data, dataB = pngB.data;
+  if (pngA.width !== w || pngA.height !== h) {
+    dataA = cropTo(pngA, w, h);
+  }
+  if (pngB.width !== w || pngB.height !== h) {
+    dataB = cropTo(pngB, w, h);
+  }
+  const mismatched = pixelmatch(dataA, dataB, diff.data, w, h, { threshold: 0.1 });
+  const pct = (mismatched / (w * h)) * 100;
+  return { pct, diff, w, h };
+}
+
+function cropTo(png, w, h) {
+  const out = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = (y * png.width + x) * 4;
+      const di = (y * w + x) * 4;
+      out[di] = png.data[si];
+      out[di + 1] = png.data[si + 1];
+      out[di + 2] = png.data[si + 2];
+      out[di + 3] = png.data[si + 3];
+    }
+  }
+  return out;
+}
+
+function median(values) {
+  if (!values.length) return NaN;
+  const s = [...values].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+}
+
+async function main() {
+  const errors = [];
+  // Launch both browsers in parallel.
+  const [chromiumCtx, webkitCtx] = await Promise.all([
+    chromium.launch().then((b) => b.newContext()),
+    webkit.launch().then((b) => b.newContext()),
+  ]);
+
+  const cr = await setup(chromiumCtx, "chromium");
+  const wk = await setup(webkitCtx, "webkit");
+  errors.push(...cr.errors.map((e) => `chromium ${e}`));
+  errors.push(...wk.errors.map((e) => `webkit ${e}`));
+
+  let pixelDiffPcts = [];
+  let webkitContrasts = [];
+  let chromiumContrasts = [];
+  let webkitRenderMs = [];
+  let chromiumRenderMs = [];
+  let webkitHasOutput = 0;
+
+  for (const scenario of SCENARIOS) {
+    const c = await captureScenario(cr.page, "chromium", scenario);
+    const w = await captureScenario(wk.page, "webkit", scenario);
+    chromiumRenderMs.push(c.renderMs);
+    webkitRenderMs.push(w.renderMs);
+
+    const pngC = decode(c.buf);
+    const pngW = decode(w.buf);
+    const cContrast = lensContrastStat(pngC).stdev;
+    const wContrast = lensContrastStat(pngW).stdev;
+    chromiumContrasts.push(cContrast);
+    webkitContrasts.push(wContrast);
+
+    const { pct, diff, w: dw, h: dh } = diffPct(pngC, pngW);
+    pixelDiffPcts.push(pct);
+
+    // Save diff image.
+    const diffPng = new PNG({ width: dw, height: dh });
+    diffPng.data = diff.data;
+    writeFileSync(join(SHOTS, `diff_${scenario.id}.png`), PNG.sync.write(diffPng));
+
+    // A naive "has filter output" check: if webkit stddev is at least 30% of
+    // chromium's, the lens is rendering something. (Helps catch the "blank
+    // Safari" failure mode.)
+    if (cContrast > 0 && wContrast > 0.3 * cContrast) webkitHasOutput += 1;
+
+    console.error(`[${scenario.id}] diff=${pct.toFixed(3)}% chromContrast=${cContrast.toFixed(2)} webkitContrast=${wContrast.toFixed(2)} cms=${c.renderMs} wms=${w.renderMs}`);
+    // Also emit per-scenario diagnostics as METRIC lines for the dashboard.
+    console.log(`METRIC scn_${scenario.id}_diff=${pct.toFixed(4)}`);
+    console.log(`METRIC scn_${scenario.id}_webkit_contrast=${wContrast.toFixed(3)}`);
+    console.log(`METRIC scn_${scenario.id}_chromium_contrast=${cContrast.toFixed(3)}`);
+  }
+
+  // Aggregate metrics.
+  const medDiff = median(pixelDiffPcts);
+  const medWContrast = median(webkitContrasts);
+  const medCContrast = median(chromiumContrasts);
+  const score = medDiff + Math.max(0, 8 - medWContrast) * 2;
+
+  console.log(`METRIC pixel_diff_pct=${medDiff.toFixed(4)}`);
+  console.log(`METRIC webkit_lens_contrast=${medWContrast.toFixed(3)}`);
+  console.log(`METRIC chromium_lens_contrast=${medCContrast.toFixed(3)}`);
+  console.log(`METRIC webkit_render_ms=${median(webkitRenderMs)}`);
+  console.log(`METRIC chromium_render_ms=${median(chromiumRenderMs)}`);
+  console.log(`METRIC webkit_has_filter_output=${webkitHasOutput}`);
+  console.log(`METRIC safari_parity_score=${score.toFixed(4)}`);
+
+  if (errors.length) {
+    console.error("--- runtime errors ---");
+    for (const e of errors) console.error(e);
+  }
+
+  await Promise.all([chromiumCtx.close(), webkitCtx.close()]);
+  process.exit(0);
+}
+
+main().catch((e) => {
+  console.error("measure failed:", e);
+  process.exit(2);
+});

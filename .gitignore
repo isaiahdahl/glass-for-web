@@ -1,4 +1,7 @@
-node_modules/
-shots/
-scrape/
-*.log
+.DS_Store
+.auto/shots/
+.auto/.server.pid
+.auto/refs/*.js
+.auto/refs/*.html
+.auto/tools/node_modules/
+.auto/tools/package-lock.json
