@@ -83,12 +83,24 @@
         background-position: center;
         background-repeat: no-repeat;
       }
-      .scene {
+      .scene,
+      .lensContent {
         border-radius: inherit;
       }
+      .colorSource {
+        position: absolute;
+        width: 34%;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        pointer-events: none;
+        filter: blur(18px) saturate(1.35);
+        opacity: var(--source-opacity, .44);
+        mix-blend-mode: screen;
+      }
+      body:not(.dark) .colorSource { mix-blend-mode: multiply; opacity: .22; }
       .lensLayer,
       .lensOutline,
-      .colorHighlight {
+      .frostVeil {
         position: absolute;
         top: 0;
         left: 0;
@@ -96,26 +108,17 @@
         will-change: transform;
       }
       .lensLayer {
+        inset: 0;
         overflow: hidden;
-        will-change: transform, filter;
+        will-change: clip-path, filter;
       }
       .lensOutline {
         box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.28);
       }
-      .colorHighlight {
-        overflow: hidden;
-        opacity: 0;
-        filter: blur(8px) saturate(1.8);
-        transform-origin: top left;
-      }
       .lensContent {
-        border-radius: inherit;
         transform-origin: top left;
       }
       .frostVeil {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
         border-radius: inherit;
         background: color-mix(in srgb, var(--frost-color) calc(var(--frost-alpha) * 100%), transparent);
       }
@@ -258,8 +261,7 @@
                   <feComposite in="dispRG" in2="dispB" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="lensBase" />
 
                   <feColorMatrix id="feSpecMask" in="map" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 1 0 -0.50196" result="specMask" />
-                  <feImage id="fePickupMap" preserveAspectRatio="none" result="pickupColorRaw" />
-                  <feOffset id="fePickupOffset" in="pickupColorRaw" dx="0" dy="0" result="pickupOffset" />
+                  <feOffset id="fePickupOffset" in="SourceGraphic" dx="0" dy="0" result="pickupOffset" />
                   <feGaussianBlur id="fePickupBlur" in="pickupOffset" stdDeviation="0" result="pickupColor" />
                   <feComposite in="pickupColor" in2="specMask" operator="in" result="pickupSpec" />
                   <feColorMatrix id="fePickupMatrix" in="pickupSpec" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="pickupBoost" />
@@ -272,9 +274,8 @@
             <div class="scene" id="scene"></div>
             <div class="lensLayer" id="lensLayer">
               <div class="lensContent" id="lensContent"></div>
-              <div class="frostVeil" id="frostVeil"></div>
             </div>
-            <div class="colorHighlight" id="colorHighlight"></div>
+            <div class="frostVeil" id="frostVeil"></div>
             <div class="lensOutline" id="lensOutline"></div>
           </div>
           <div class="mapStage" id="mapStage">

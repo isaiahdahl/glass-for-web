@@ -63,7 +63,6 @@ const stageEl = document.getElementById("stage");
 const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
 const lensOutlineEl = document.getElementById("lensOutline");
-const colorHighlightEl = document.getElementById("colorHighlight");
 const lensContentEl = document.getElementById("lensContent");
 const frostVeilEl = document.getElementById("frostVeil");
 const mapStageEl = document.getElementById("mapStage");
@@ -76,14 +75,12 @@ const feSourceBlur = document.getElementById("feSourceBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
-const fePickupMap = document.getElementById("fePickupMap");
 const fePickupOffset = document.getElementById("fePickupOffset");
 const fePickupBlur = document.getElementById("fePickupBlur");
 const fePickupMatrix = document.getElementById("fePickupMatrix");
 const feWhiteSpecMatrix = document.getElementById("feWhiteSpecMatrix");
 
 const mapCanvas = document.createElement("canvas");
-const pickupCanvas = document.createElement("canvas");
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -96,66 +93,26 @@ function clamp01(v) {
 
 // ── live DOM scene ───────────────────────────────────────────────────────
 function buildScene(container) {
-  // The original playground wraps a DOM node whose visible content is a CSS
-  // background image. Keep that structure: the SVG filter bends SourceGraphic,
-  // but the source is an image-like DOM surface, not hard colored dash nodes.
+  // The scene is real DOM/CSS content. Color pickup samples this actual
+  // SourceGraphic through feOffset, so moving the lens near a green/pink/blue
+  // blob changes the specular tint naturally.
   container.replaceChildren();
-}
-
-// ── SVG colour-pickup map ────────────────────────────────────────────────
-function regenPickupMap() {
-  const size = MAP_SIZE;
-  pickupCanvas.width = size;
-  pickupCanvas.height = size;
-  const ctx = pickupCanvas.getContext("2d");
-  ctx.clearRect(0, 0, size, size);
-
-  // A smooth, saturated environment map for the specular pass. This restores
-  // the Apple-like colored highlight, but because it is smooth (not hard DOM
-  // dash geometry) it does not produce the blocky artifacts from the previous
-  // SVG attempt. It is consumed only by SVG feImage/feComposite/feBlend.
-  const angle = (state.specularAngle * Math.PI) / 180;
-  const cx = size * 0.5;
-  const cy = size * 0.5;
-  let base;
-  if (ctx.createConicGradient) {
-    base = ctx.createConicGradient(angle, cx, cy);
-    base.addColorStop(0.00, "#9eff65");
-    base.addColorStop(0.16, "#00e6a8");
-    base.addColorStop(0.32, "#0085ff");
-    base.addColorStop(0.50, "#3d00ff");
-    base.addColorStop(0.68, "#ff00aa");
-    base.addColorStop(0.84, "#ff8a50");
-    base.addColorStop(1.00, "#9eff65");
-  } else {
-    base = ctx.createLinearGradient(0, 0, size, size);
-    base.addColorStop(0, "#9eff65");
-    base.addColorStop(0.35, "#00b7ff");
-    base.addColorStop(0.7, "#ff00aa");
-    base.addColorStop(1, "#ff8a50");
+  const blobs = [
+    ["#49f56f", 62, 6, 30],
+    ["#55b7ff", 67, 54, 28],
+    ["#ff4bb5", 12, 58, 32],
+    ["#ff9c45", 5, 20, 26],
+    ["#cfff31", 82, 70, 24],
+  ];
+  for (const [color, left, top, size] of blobs) {
+    const el = document.createElement("div");
+    el.className = "colorSource";
+    el.style.left = `${left}%`;
+    el.style.top = `${top}%`;
+    el.style.width = `${size}%`;
+    el.style.background = `radial-gradient(circle, ${color} 0%, ${color}88 34%, transparent 72%)`;
+    container.append(el);
   }
-  ctx.globalAlpha = darkMode ? 0.95 : 0.72;
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, size, size);
-
-  const addBlob = (x, y, r, color, alpha) => {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, color);
-    g.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  };
-  ctx.globalCompositeOperation = "lighter";
-  addBlob(size * 0.24, size * 0.18, size * 0.58, "#b9ff42", darkMode ? 0.95 : 0.55);
-  addBlob(size * 0.80, size * 0.18, size * 0.52, "#00ffaa", darkMode ? 0.80 : 0.45);
-  addBlob(size * 0.92, size * 0.76, size * 0.58, "#005dff", darkMode ? 0.95 : 0.55);
-  addBlob(size * 0.22, size * 0.80, size * 0.64, "#ff008c", darkMode ? 0.90 : 0.52);
-  addBlob(size * 0.12, size * 0.34, size * 0.42, "#ff9d4d", darkMode ? 0.75 : 0.40);
-  ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = 1;
-
-  setHref(fePickupMap, pickupCanvas.toDataURL("image/png"));
 }
 
 // ── displacement map regeneration ────────────────────────────────────────
@@ -193,28 +150,35 @@ function regenMap() {
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
-function updateFilterPrimitives(fullW, fullH) {
+function updateFilterPrimitives(fullW, fullH, x, y) {
+  const sw = Math.max(1, stageRect.w);
+  const sh = Math.max(1, stageRect.h);
+
+  // The filter is applied to a full-stage source layer. Position the lens map
+  // within that full filter region, exactly like Aave's feImage placement path.
+  feMap.setAttribute("x", String(x / sw));
+  feMap.setAttribute("y", String(y / sh));
+  feMap.setAttribute("width", String(fullW / sw));
+  feMap.setAttribute("height", String(fullH / sh));
+
   const scale = state.scale;
   feDispR.setAttribute("scale", String(scale * (1 + 0.2 * state.chroma)));
   feDispG.setAttribute("scale", String(scale * (1 + 0.1 * state.chroma)));
   feDispB.setAttribute("scale", String(scale));
 
-  // Aave uses objectBoundingBox units for the normal path, so blur stdDeviation
-  // is expressed as px / bbox dimension.
   feSourceBlur.setAttribute(
     "stdDeviation",
-    `${state.blur / Math.max(1, fullW)} ${state.blur / Math.max(1, fullH)}`,
+    `${state.blur / sw} ${state.blur / sh}`,
   );
 
+  // This is the actual color pickup: sample the full SourceGraphic at an offset.
+  // If the source just below/near the lens is green, pickupSpec goes green.
   const ang = (state.specularAngle * Math.PI) / 180;
-  fePickupOffset.setAttribute("dx", String((state.pickupOffset * Math.cos(ang)) / Math.max(1, fullW)));
-  fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / Math.max(1, fullH)));
-  fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(1, Math.max(fullW, fullH))));
+  fePickupOffset.setAttribute("dx", String((state.pickupOffset * Math.cos(ang)) / sw));
+  fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / sh));
+  fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(sw, sh)));
 
-  // Spec mask alpha tops out around 0.5 because the map B channel is encoded as
-  // 128..255. These gains intentionally restore a vivid Apple-like colored edge
-  // while remaining pure SVG filter compositing.
-  const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 3.1 : 2.45));
+  const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 2.8 : 2.2));
   const whiteA = Math.max(0, state.specular * (1 - state.colorPickup) * (darkMode ? 1.0 : 0.7));
   fePickupMatrix.setAttribute(
     "values",
@@ -224,28 +188,6 @@ function updateFilterPrimitives(fullW, fullH) {
     "values",
     `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 ${whiteA} 0`,
   );
-}
-
-function updateColorHighlight() {
-  const opacity = clamp01(state.specular * state.colorPickup * (darkMode ? 0.50 : 0.46));
-  const blur = Math.max(3, state.pickupSoftness * 0.22);
-  const a = state.specularAngle;
-  colorHighlightEl.style.opacity = String(opacity);
-  colorHighlightEl.style.mixBlendMode = darkMode ? "screen" : "normal";
-  colorHighlightEl.style.filter = `blur(${blur}px) saturate(${darkMode ? 2.25 : 2.15})`;
-  colorHighlightEl.style.background = `
-    radial-gradient(circle at 22% 14%, rgba(190,255,80,.95), transparent 30%),
-    radial-gradient(circle at 78% 16%, rgba(0,255,170,.86), transparent 34%),
-    radial-gradient(circle at 90% 78%, rgba(0,82,255,.90), transparent 36%),
-    radial-gradient(circle at 18% 82%, rgba(255,0,150,.86), transparent 36%),
-    conic-gradient(from ${a - 20}deg, rgba(170,255,80,.75), rgba(0,240,190,.75), rgba(0,90,255,.78), rgba(255,0,160,.72), rgba(255,150,70,.72), rgba(170,255,80,.75))
-  `;
-  // Keep the color mostly on the glass perimeter/specular band instead of
-  // flooding the whole tile. CSS mask is used only for the highlight layer;
-  // the underlying refraction remains SVG feDisplacementMap.
-  const mask = `radial-gradient(closest-side, transparent 34%, rgba(0,0,0,.30) 52%, rgba(0,0,0,.92) 74%, rgba(0,0,0,.72) 100%)`;
-  colorHighlightEl.style.maskImage = mask;
-  colorHighlightEl.style.webkitMaskImage = mask;
 }
 
 function updateFrostVeil() {
@@ -264,22 +206,27 @@ function render() {
   const x = state.posX * stageRect.w - fullW / 2;
   const y = state.posY * stageRect.h - fullH / 2;
 
-  for (const el of [lensLayerEl, colorHighlightEl, lensOutlineEl]) {
+  // Filter the full source layer, then clip the filtered result down to the
+  // lens region. This keeps SourceGraphic large enough for feOffset color
+  // pickup to sample surrounding/underlying content.
+  lensLayerEl.style.width = `${stageRect.w}px`;
+  lensLayerEl.style.height = `${stageRect.h}px`;
+  lensLayerEl.style.transform = "none";
+  lensLayerEl.style.clipPath = `inset(${y}px ${stageRect.w - (x + fullW)}px ${stageRect.h - (y + fullH)}px ${x}px round ${state.borderRadius}px)`;
+  lensLayerEl.style.webkitClipPath = lensLayerEl.style.clipPath;
+  lensContentEl.style.width = `${stageRect.w}px`;
+  lensContentEl.style.height = `${stageRect.h}px`;
+  lensContentEl.style.transform = "none";
+
+  for (const el of [frostVeilEl, lensOutlineEl]) {
     el.style.width = `${fullW}px`;
     el.style.height = `${fullH}px`;
     el.style.borderRadius = `${state.borderRadius}px`;
     el.style.transform = `translate(${x}px, ${y}px)`;
   }
 
-  // The filtered SourceGraphic is a live DOM copy of the whole stage, shifted
-  // under a clipped lens bbox. That is the SVG/live-DOM analogue of AaveGlass.
-  lensContentEl.style.width = `${stageRect.w}px`;
-  lensContentEl.style.height = `${stageRect.h}px`;
-  lensContentEl.style.transform = `translate(${-x}px, ${-y}px)`;
-
-  updateFilterPrimitives(fullW, fullH);
+  updateFilterPrimitives(fullW, fullH, x, y);
   updateFrostVeil();
-  updateColorHighlight();
 
   const mr = mapStageEl.getBoundingClientRect();
   mapImg.style.width = `${fullW}px`;
@@ -336,7 +283,6 @@ function buildControls() {
         "specularAngle",
       ];
       if (mapKeys.includes(s.key)) regenMap();
-      if (s.key === "specularAngle") regenPickupMap();
       render();
     });
     row.append(label, input, val);
@@ -381,10 +327,7 @@ function applyTheme(theme, redraw = true) {
   document.body.classList.toggle("dark", darkMode);
   const label = document.querySelector("[data-theme-label]");
   if (label) label.textContent = darkMode ? "Light" : "Dark";
-  if (redraw) {
-    regenPickupMap();
-    render();
-  }
+  if (redraw) render();
 }
 
 function setupTheme() {
@@ -433,7 +376,6 @@ function boot() {
   attachDrag(stageEl);
   attachDrag(mapStageEl);
   setupTheme();
-  regenPickupMap();
   regenMap();
   resize();
   new ResizeObserver(resize).observe(stageEl);
@@ -443,7 +385,6 @@ function boot() {
     set(partial) {
       Object.assign(state, partial);
       syncControlWidgets();
-      regenPickupMap();
       regenMap();
       render();
     },
