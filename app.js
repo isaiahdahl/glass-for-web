@@ -62,6 +62,7 @@ const mapStageEl = document.getElementById("mapStage");
 const mapImg = document.getElementById("mapBlob");
 const controlsEl = document.getElementById("controls");
 
+const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
@@ -82,18 +83,34 @@ function clamp01(v) {
 }
 
 let filterApplied = false;
+let filterVersion = 0;
 function applyFreshFilterId() {
-  // Stable filter id (no cycling). Cycling the id on every update dropped the
-  // filter reference for a frame on Safari -> a visible flicker where "nothing
-  // applies", made worse by the hole-and-fill (the lens briefly shows its
-  // empty hole). Aave doesn't cycle ids either; updating feImage href / the
-  // primitive attributes is enough to make WebKit re-render. We only set the
-  // filter URL on the scene once.
+  // Set the filter URL on the scene once, with a stable id. We do NOT cycle
+  // the id on parameter/map changes: those change the feImage href, which
+  // Safari re-renders on its own, and cycling there caused a flicker (the
+  // fresh filter waits on the new map decode and the hole-and-fill briefly
+  // shows the empty lens hole).
   if (filterApplied) return;
   const url = `url(#${FILTER_BASE_ID})`;
   sceneEl.style.filter = url;
   sceneEl.style.webkitFilter = url;
   filterApplied = true;
+}
+
+function forceSafariFilterRefresh() {
+  // Safari caches SVG filter output and will NOT re-render when only the lens
+  // POSITION changes (feImage/feLensMask x/y during a drag) — the morphing
+  // appears frozen in place. Cycling the filter id forces a re-render. Unlike
+  // a parameter change, a drag does not change the map href, so the feImage is
+  // already decoded and the re-render is immediate — no flicker. Chromium
+  // re-renders on attribute changes natively, so it's a Safari-only nudge.
+  if (!isSafariLike) return;
+  filterVersion += 1;
+  const id = `${FILTER_BASE_ID}-${filterVersion}`;
+  filterEl.id = id;
+  const url = `url(#${id})`;
+  sceneEl.style.filter = url;
+  sceneEl.style.webkitFilter = url;
 }
 
 // ── live DOM scene ───────────────────────────────────────────────────────
@@ -301,6 +318,9 @@ function attachDrag(el) {
     state.posX = Math.max(0, Math.min(1, rx - off.x));
     state.posY = Math.max(0, Math.min(1, ry - off.y));
     render();
+    // Position-only change: nudge Safari to re-render the filter (it caches
+    // otherwise). No map href change here, so no flicker.
+    forceSafariFilterRefresh();
   });
   const up = () => {
     dragging = false;
@@ -376,6 +396,9 @@ function boot() {
       syncControlWidgets();
       regenMap();
       render();
+      // Programmatic updates may move the lens; force a Safari re-render so
+      // position changes apply (mirrors the drag handler).
+      forceSafariFilterRefresh();
     },
     setTheme(theme) {
       try {

@@ -203,6 +203,33 @@ async function main() {
   const internal = diffPct(ourCrCrop, ourWkCrop);
   console.log(`METRIC chromium_vs_webkit=${internal.pct.toFixed(4)}`);
 
+  // Movement guard: on WebKit, render the lens at centre vs off-centre and
+  // confirm the refracted output actually MOVED. Catches the Safari
+  // "filter cached, lens frozen in place" regression that the centre-only
+  // scenarios miss. We diff the same fixed centre crop in both states — if
+  // the lens moved, that crop content must change.
+  let moveDelta = NaN;
+  {
+    const b = await webkit.launch();
+    const page = await (await b.newContext({ viewport: { width: 1100, height: 760 }, deviceScaleFactor: 2 })).newPage();
+    await page.goto(OUR_URL, { waitUntil: "load", timeout: 15000 });
+    await page.waitForFunction("window.__ready === true", null, { timeout: 10000 });
+    await page.evaluate(() => { window.__glass.setTheme("light"); window.__glass.set({ posX: 0.5, posY: 0.5 }); });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const centreBuf = await (await page.$("#stage")).screenshot({ type: "png" });
+    await page.evaluate(() => window.__glass.set({ posX: 0.72, posY: 0.62 }));
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const movedBuf = await (await page.$("#stage")).screenshot({ type: "png" });
+    await b.close();
+    const a = await centeredLensCrop(centreBuf, 0);
+    const c = await centeredLensCrop(movedBuf, 0);
+    moveDelta = diffPct(a, c).pct; // must be clearly > 0 if the lens moved
+  }
+  console.log(`METRIC webkit_move_delta=${isFinite(moveDelta) ? moveDelta.toFixed(4) : "NaN"}`);
+  if (isFinite(moveDelta) && moveDelta < 1.0) {
+    console.error(`[WARN] webkit_move_delta=${moveDelta.toFixed(3)}% — lens may be FROZEN (filter not re-rendering on position change)`);
+  }
+
   // Aave comparison (light only).
   let aaveDiffLight = NaN, aaveAvail = 0;
   if (!SKIP_AAVE) {
