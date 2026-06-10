@@ -45,8 +45,9 @@ case "${1:-run}" in
     git rev-parse --short HEAD
     ;;
   discard)
-    # Discard working tree changes EXCEPT .auto/ which we keep for log continuity.
-    git checkout -- ':!.auto' . 2>/dev/null || git checkout -- .
+    # Revert source files only. .auto/log.jsonl stays so the run record
+    # of failures survives.
+    git checkout HEAD -- index.html app.js glass.js
     ;;
   log)
     shift
