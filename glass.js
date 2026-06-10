@@ -1,9 +1,8 @@
-// glass.js — procedural displacement-map + WebGL2 glass renderer.
+// glass.js — procedural displacement-map generator for the SVG glass filter.
 //
 // The map's R/G channels encode a normalized refraction direction; B encodes
-// specular/glow intensity. The renderer displaces the background by
-// (rg-0.5)*scale with per-channel chromatic splitting, optional source blur,
-// separate frost, and directional color pickup.
+// specular/glow intensity. The visible renderer is the SVG filter in index.html
+// (`feImage` + `feDisplacementMap`), not WebGL.
 
 // ─────────────────────────────────────────────────────────────────────────
 // Math helpers
@@ -193,9 +192,8 @@ export function generateDisplacementMap(canvas, opts) {
         data[t] = 128;
         data[t + 1] = 128;
         data[t + 2] = 128;
-        // Transparent outside the rounded lens. The WebGL path uses alpha so
-        // frost/blur/specular are contained to the rounded shape instead of the
-        // rectangular bbox.
+        // Transparent outside the rounded lens so the SVG map can be composited
+        // cleanly over the neutral map background.
         data[t + 3] = 0;
       }
     }
