@@ -231,8 +231,14 @@ function render() {
     el.style.borderRadius = `${state.borderRadius}px`;
     el.style.transform = `translate(${x}px, ${y}px)`;
   }
-  lensLayerEl.style.clipPath = "none";
-  lensLayerEl.style.webkitClipPath = "none";
+  // Explicit rounded clip-path. WebKit ignores `overflow: hidden +
+  // border-radius` when clipping content that has an SVG `filter` applied,
+  // so the displaced output leaks past the rounded silhouette and the lens
+  // shows a hard dark rim where the filter samples SourceGraphic from
+  // pixels outside the bbox. Clipping explicitly fixes that.
+  const clip = `inset(0 round ${state.borderRadius}px)`;
+  lensLayerEl.style.clipPath = clip;
+  lensLayerEl.style.webkitClipPath = clip;
 
   // The filtered SourceGraphic is the full scene translated underneath a moving
   // lens-sized viewport. This keeps the lens and rendered glass in the same
