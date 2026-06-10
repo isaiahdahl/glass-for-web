@@ -10,7 +10,10 @@ const MAP_SIZE = 512;
 const THEME_KEY = "glass-web-theme";
 const FILTER_BASE_ID = "glassSvgFilter";
 
-// Slider order is row-major across the 2-col grid, matching the shipped demo.
+// EXACT Aave DisplacementMapPlayground sliders (component `S` in their bundle
+// 25ef42f3c325a091.js). Order, ranges, steps and defaults all mirror theirs.
+// Color pickup / frost / specular sliders were ours and are removed for the
+// exact-parity phase; they can be layered back on later.
 const SLIDERS = [
   { key: "width", label: "Width", min: 20, max: 120, step: 1, dp: 0 },
   { key: "height", label: "Height", min: 20, max: 80, step: 1, dp: 0 },
@@ -20,16 +23,10 @@ const SLIDERS = [
   { key: "curvature", label: "Curvature", min: 0, max: 80, step: 1, dp: 0 },
   { key: "splay", label: "Splay", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "chroma", label: "Chroma", min: 0, max: 1, step: 0.01, dp: 2 },
-  { key: "blur", label: "Blur", min: 0, max: 12, step: 0.5, dp: 1 },
-  { key: "frost", label: "Frost", min: 0, max: 1, step: 0.01, dp: 2 },
+  { key: "blur", label: "Blur", min: 0, max: 2, step: 0.25, dp: 2 },
   { key: "glow", label: "Glow", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
-  // Apple-like colour pickup extension.
-  { key: "specular", label: "Specular", min: 0, max: 2, step: 0.02, dp: 2 },
-  { key: "colorPickup", label: "Color Pickup", min: 0, max: 1, step: 0.02, dp: 2 },
-  { key: "pickupOffset", label: "Pickup Offset", min: 0, max: 140, step: 1, dp: 0 },
-  { key: "pickupSoftness", label: "Pickup Softness", min: 0, max: 80, step: 1, dp: 0 },
 ];
 
 const state = {
@@ -42,14 +39,9 @@ const state = {
   splay: 1,
   chroma: 0.2,
   blur: 0,
-  frost: 0.08,
-  glow: 0.35,
-  edgeHighlight: 0.45,
+  glow: 0.1,
+  edgeHighlight: 0.25,
   specularAngle: 45,
-  specular: 1.35,
-  colorPickup: 0.9,
-  pickupOffset: 56,
-  pickupSoftness: 22,
   posX: 0.5,
   posY: 0.5,
 };
@@ -67,7 +59,6 @@ const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
 const lensOutlineEl = document.getElementById("lensOutline");
 const lensContentEl = document.getElementById("lensContent");
-const frostVeilEl = document.getElementById("frostVeil");
 const mapStageEl = document.getElementById("mapStage");
 const mapImg = document.getElementById("mapBlob");
 const controlsEl = document.getElementById("controls");
@@ -79,10 +70,6 @@ const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
-const fePickupOffset = document.getElementById("fePickupOffset");
-const fePickupBlur = document.getElementById("fePickupBlur");
-const fePickupMatrix = document.getElementById("fePickupMatrix");
-const feWhiteSpecMatrix = document.getElementById("feWhiteSpecMatrix");
 
 const mapCanvas = document.createElement("canvas");
 
@@ -110,26 +97,10 @@ function applyFreshFilterId(force = false) {
 
 // ── live DOM scene ───────────────────────────────────────────────────────
 function buildScene(container) {
-  // The scene is real DOM/CSS content. Color pickup samples this actual
-  // SourceGraphic through feOffset, so moving the lens near a green/pink/blue
-  // blob changes the specular tint naturally.
+  // Aave's playground source is just the demo background image (the dashed
+  // grid). No color blobs — those were ours for the color-pickup extension,
+  // removed for exact parity. The .scene / .lensContent CSS paints the bg.
   container.replaceChildren();
-  const blobs = [
-    ["#49f56f", 62, 6, 30],
-    ["#55b7ff", 67, 54, 28],
-    ["#ff4bb5", 12, 58, 32],
-    ["#ff9c45", 5, 20, 26],
-    ["#cfff31", 82, 70, 24],
-  ];
-  for (const [color, left, top, size] of blobs) {
-    const el = document.createElement("div");
-    el.className = "colorSource";
-    el.style.left = `${left}%`;
-    el.style.top = `${top}%`;
-    el.style.width = `${size}%`;
-    el.style.background = `radial-gradient(circle, ${color} 0%, ${color}88 34%, transparent 72%)`;
-    container.append(el);
-  }
 }
 
 // ── displacement map regeneration ────────────────────────────────────────
@@ -194,34 +165,6 @@ function updateFilterPrimitives(fullW, fullH) {
     );
   }
 
-  // This still samples SourceGraphic, but now in the lens-local coordinate
-  // system. Because lensContent is the stage translated underneath the lens,
-  // offsetting SourceGraphic samples nearby/underlying scene colors.
-  const ang = (state.specularAngle * Math.PI) / 180;
-  fePickupOffset.setAttribute("dx", String((state.pickupOffset * Math.cos(ang)) / Math.max(1, fullW)));
-  fePickupOffset.setAttribute("dy", String((-state.pickupOffset * Math.sin(ang)) / Math.max(1, fullH)));
-  fePickupBlur.setAttribute("stdDeviation", String(state.pickupSoftness / Math.max(1, Math.max(fullW, fullH))));
-
-  const pickupA = Math.max(0, state.specular * state.colorPickup * (darkMode ? 2.8 : 2.2));
-  const whiteA = Math.max(0, state.specular * (1 - state.colorPickup) * (darkMode ? 1.0 : 0.7));
-  fePickupMatrix.setAttribute(
-    "values",
-    `1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 ${pickupA} 0`,
-  );
-  feWhiteSpecMatrix.setAttribute(
-    "values",
-    `0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 ${whiteA} 0`,
-  );
-}
-
-function updateFrostVeil() {
-  if (darkMode) {
-    const a = clamp01(Math.pow(state.frost, 0.72) * 0.94);
-    frostVeilEl.style.background = `rgba(5, 3, 13, ${a})`;
-  } else {
-    const a = clamp01(Math.pow(state.frost, 1.18) * 0.38);
-    frostVeilEl.style.background = `rgba(230, 224, 255, ${a})`;
-  }
 }
 
 function render() {
@@ -230,7 +173,7 @@ function render() {
   const x = state.posX * stageRect.w - fullW / 2;
   const y = state.posY * stageRect.h - fullH / 2;
 
-  for (const el of [lensLayerEl, frostVeilEl, lensOutlineEl]) {
+  for (const el of [lensLayerEl, lensOutlineEl]) {
     el.style.width = `${fullW}px`;
     el.style.height = `${fullH}px`;
     el.style.borderRadius = `${state.borderRadius}px`;
@@ -251,7 +194,6 @@ function render() {
   lensContentEl.style.transform = `translate(${-x}px, ${-y}px)`;
 
   updateFilterPrimitives(fullW, fullH);
-  updateFrostVeil();
   applyFreshFilterId(false);
 
   const mr = mapStageEl.getBoundingClientRect();

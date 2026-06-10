@@ -93,20 +93,8 @@
       .lensContent {
         border-radius: inherit;
       }
-      .colorSource {
-        position: absolute;
-        width: 34%;
-        aspect-ratio: 1;
-        border-radius: 50%;
-        pointer-events: none;
-        filter: blur(18px) saturate(1.35);
-        opacity: var(--source-opacity, .44);
-        mix-blend-mode: screen;
-      }
-      body:not(.dark) .colorSource { mix-blend-mode: multiply; opacity: .22; }
       .lensLayer,
-      .lensOutline,
-      .frostVeil {
+      .lensOutline {
         position: absolute;
         top: 0;
         left: 0;
@@ -118,15 +106,12 @@
         overflow: hidden;
         will-change: clip-path, filter;
       }
+      /* Aave's exact lens edge shadow (edgeShadow in their lens config). */
       .lensOutline {
-        box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.28);
+        box-shadow: 0 0 0 1px var(--bg-max), 0 8px 24px rgba(0, 0, 0, 0.4);
       }
       .lensContent {
         transform-origin: top left;
-      }
-      .frostVeil {
-        border-radius: inherit;
-        background: color-mix(in srgb, var(--frost-color) calc(var(--frost-alpha) * 100%), transparent);
       }
       /* right: the generated displacement map on a neutral 128-grey field */
       .mapStage { background: var(--map-bg); }
@@ -269,19 +254,12 @@
                   <feDisplacementMap id="feDispB" in="blurred" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G" result="dispBRaw" />
                   <feColorMatrix in="dispBRaw" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="dispB" />
                   <feComposite in="dispR" in2="dispG" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="dispRG" />
-                  <feComposite in="dispRG" in2="dispB" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="lensBase" />
-
-                  <feColorMatrix id="feSpecMask" in="map" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 1 0 -0.50196" result="specMask" />
-                  <feOffset id="fePickupOffset" in="SourceGraphic" dx="0" dy="0" result="pickupOffset" />
-                  <feGaussianBlur id="fePickupBlur" in="pickupOffset" stdDeviation="0" result="pickupColor" />
-                  <feComposite in="pickupColor" in2="specMask" operator="in" result="pickupSpec" />
-                  <feColorMatrix id="fePickupMatrix" in="pickupSpec" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="pickupBoost" />
-                  <feColorMatrix id="feWhiteSpecMatrix" in="specMask" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0 0" result="whiteSpec" />
-                  <feBlend in="lensBase" in2="pickupBoost" mode="screen" result="withPickup" />
-                  <feBlend in="withPickup" in2="whiteSpec" mode="screen" result="blended" />
-                  <!-- Final output blur. Safari gets a tiny smoothing pass to match
-                       Chromium's natural compositor anti-aliasing on the refracted
-                       output. JS toggles stdDeviation=0 for Chromium. -->
+                  <feComposite in="dispRG" in2="dispB" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="blended" />
+                  <!-- Final output blur. Safari-only: matches Aave's slightly soft
+                       WebKit compositor output. JS sets stdDeviation=0 on Chromium.
+                       (Aave's playground has specularStrength=0, so the specular /
+                       colour-pickup primitives are a visual no-op there and are
+                       omitted for exact parity.) -->
                   <feGaussianBlur id="feFinalBlur" in="blended" stdDeviation="0" result="lensResult" />
                 </filter>
               </defs>
@@ -290,7 +268,7 @@
             <div class="lensLayer" id="lensLayer">
               <div class="lensContent" id="lensContent"></div>
             </div>
-            <div class="frostVeil" id="frostVeil"></div>
+            <!-- frostVeil removed for exact Aave parity -->
             <div class="lensOutline" id="lensOutline"></div>
           </div>
           <div class="mapStage" id="mapStage">
