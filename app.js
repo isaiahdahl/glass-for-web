@@ -198,9 +198,11 @@ function generateRimSpecMap(canvas) {
   const ly = -Math.sin(angle);
   const px = -ly;
   const py = lx;
-  const darkWidth = 5.0;
-  const whiteStart = 0.7;
-  const whiteWidth = 1.35;
+  // Keep the bevel crisp, especially on light backgrounds: the dark outer band
+  // should read as a narrow shadow edge, not a soft gray stroke.
+  const darkWidth = 1.25;
+  const whiteStart = 0.25;
+  const whiteWidth = 0.55;
   for (let row = 0; row < size; row++) {
     const y = (row + 0.5) * pxH - hh;
     for (let col = 0; col < size; col++) {
@@ -220,8 +222,8 @@ function generateRimSpecMap(canvas) {
       const w = 1 - Math.abs(d - whiteStart) / whiteWidth;
       const whiteBand = Math.max(0, w);
 
-      const white = strength * whiteBand * Math.pow(alongLight, 1.15);
-      const dark = strength * 0.72 * darkBand * Math.pow(alongPerp, 0.9);
+      const white = strength * whiteBand * Math.pow(alongLight, 1.35);
+      const dark = strength * 0.55 * darkBand * Math.pow(alongPerp, 1.2);
       const i = (row * size + col) * 4;
       data[i] = Math.max(0, Math.min(255, (white * 255 + 0.5) | 0));
       data[i + 1] = Math.max(0, Math.min(255, (dark * 255 + 0.5) | 0));
