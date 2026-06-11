@@ -38,8 +38,8 @@ const state = {
   splay: 1,
   chroma: 0.2,
   blur: 8,
-  edgeHighlight: 0,
-  specularAngle: 45,
+  edgeHighlight: 0.5,
+  specularAngle: 90,
   posX: 0.5,
   posY: 0.5,
 };
@@ -190,10 +190,14 @@ function generateRimSpecMap(canvas) {
   const pxH = (2 * hh) / size;
   const strength = Math.max(0, Math.min(1, state.edgeHighlight));
   const angle = (state.specularAngle * Math.PI) / 180;
-  // Light vector. Negative Y is up in screen space; the angle slider rotates
-  // the paired white/dark bevel around the rounded rim.
+  // Bevel axes. Liquid Glass reads less like one directional highlight and
+  // more like a paired/quadrupole rim response: white appears on TWO opposite
+  // sides along the light axis, while dark appears on TWO opposite sides along
+  // the perpendicular axis. The angle rotates that whole cross.
   const lx = -Math.cos(angle);
   const ly = -Math.sin(angle);
+  const px = -ly;
+  const py = lx;
   const darkWidth = 5.0;
   const whiteStart = 0.7;
   const whiteWidth = 1.35;
@@ -204,17 +208,20 @@ function generateRimSpecMap(canvas) {
       const sdf = roundedRectSdf(x, y, hw, hh, r);
       const d = Math.max(0, -sdf); // distance inward from outer edge
       const n = roundedRectNormal(x, y, hw, hh, r);
-      const facing = n.x * lx + n.y * ly;
+      const alongLight = Math.abs(n.x * lx + n.y * ly);
+      const alongPerp = Math.abs(n.x * px + n.y * py);
 
-      // Dark bevel: broad at the outside edge, decays inward.
+      // Dark bevel: broad at the outside edge, decays inward, strongest on the
+      // two sides perpendicular to the light axis.
       const darkBand = Math.max(0, 1 - d / darkWidth);
-      // White glint: offset inward and much thinner, so it appears to cross
-      // over the dark band instead of sitting on the exact same line.
+      // White glint: offset inward and much thinner, strongest on the two sides
+      // aligned with the light axis. Because both are two-lobed and offset in
+      // depth, they cross/overlap through the rounded corners.
       const w = 1 - Math.abs(d - whiteStart) / whiteWidth;
       const whiteBand = Math.max(0, w);
 
-      const white = strength * whiteBand * Math.max(0, facing);
-      const dark = strength * 0.75 * darkBand * Math.max(0, -facing);
+      const white = strength * whiteBand * Math.pow(alongLight, 1.15);
+      const dark = strength * 0.72 * darkBand * Math.pow(alongPerp, 0.9);
       const i = (row * size + col) * 4;
       data[i] = Math.max(0, Math.min(255, (white * 255 + 0.5) | 0));
       data[i + 1] = Math.max(0, Math.min(255, (dark * 255 + 0.5) | 0));
