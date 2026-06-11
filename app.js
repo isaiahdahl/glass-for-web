@@ -23,7 +23,7 @@ const SLIDERS = [
   { key: "curvature", label: "Curvature", min: 0, max: 80, step: 1, dp: 0 },
   { key: "splay", label: "Splay", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "chroma", label: "Chroma", min: 0, max: 1, step: 0.01, dp: 2 },
-  { key: "blur", label: "Blur", min: 0, max: 2, step: 0.25, dp: 2 },
+  { key: "blur", label: "Blur", min: 0, max: 30, step: 0.5, dp: 1 },
   { key: "glow", label: "Glow", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
@@ -38,7 +38,7 @@ const state = {
   curvature: 40,
   splay: 1,
   chroma: 0.2,
-  blur: 0,
+  blur: 8,
   glow: 0.1,
   edgeHighlight: 0.25,
   specularAngle: 45,
@@ -69,7 +69,6 @@ const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
-const feLensMask = document.getElementById("feLensMask");
 
 const mapCanvas = document.createElement("canvas");
 
@@ -197,7 +196,6 @@ function updateFilterPrimitives(fullW, fullH) {
     el.setAttribute("width", String(fullW / sw));
     el.setAttribute("height", String(fullH / sh));
   };
-  lensRegion(feLensMask);
   lensRegion(feDispR);
   lensRegion(feDispG);
   lensRegion(feDispB);

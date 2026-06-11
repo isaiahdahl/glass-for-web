@@ -330,16 +330,17 @@
                        (Aave's playground has specularStrength=0, so the specular /
                        colour-pickup primitives are a visual no-op there and are
                        omitted for exact parity.) -->
-                  <feGaussianBlur id="feFinalBlur" in="blended" stdDeviation="0" result="lensResult" />
-                  <!-- Hole-and-fill (Aave). The filter runs on the whole stage, but we
-                       only want the refracted/blurred result inside the lens; everywhere
-                       else must stay the ORIGINAL sharp scene. feFlood is positioned at
-                       the lens rect (x/y/width/height set in app.js), so lensMask is black
-                       only over the lens. SourceGraphic OUT lensMask = the scene with a
-                       lens-shaped hole; lensResult OVER that fills the hole. Result: blur
-                       and refraction affect only the lens surface, the rest stays crisp. -->
-                  <feFlood id="feLensMask" flood-color="black" flood-opacity="1" result="lensMask" />
-                  <feComposite in="SourceGraphic" in2="lensMask" operator="out" result="holedSG" />
+                  <feGaussianBlur id="feFinalBlur" in="blended" stdDeviation="0" result="blendedSmooth" />
+                  <!-- Rounded clip + hole-and-fill from a SINGLE rounded mask.
+                       The map's ALPHA channel is baked as anti-aliased rounded-rect
+                       coverage (glass.js). We turn it into a white rounded shape
+                       (roundMask), clip the frosted/refracted body to it (operator=in),
+                       and punch the SAME rounded hole in the sharp scene. This replaces
+                       the old rectangular feFlood mask, so a heavy frost blur no longer
+                       bleeds past the rounded corners into the rect subregion. -->
+                  <feColorMatrix in="rawMapUnfiltered" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0" result="roundMask" />
+                  <feComposite in="blendedSmooth" in2="roundMask" operator="in" result="lensResult" />
+                  <feComposite in="SourceGraphic" in2="roundMask" operator="out" result="holedSG" />
                   <feComposite in="lensResult" in2="holedSG" operator="over" />
                 </filter>
               </defs>
@@ -362,7 +363,7 @@
       <div class="controls" id="controls"></div>
 
     </div>
-    <div class="versionBadge" aria-hidden="true">330e823+</div>
+    <div class="versionBadge" aria-hidden="true">542ef82+</div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

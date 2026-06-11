@@ -103,6 +103,11 @@ export function generateDisplacementMap(canvas, opts) {
   const invHalfMin = halfMin > 0 ? 1 / halfMin : 0;
   const pxW = (2 * hw) / size;
   const pxH = (2 * hh) / size;
+  // Anti-aliased rounded-rect coverage written into the ALPHA channel. The SVG
+  // filter uses this as the single rounded mask for BOTH the hole-and-fill and
+  // the lens clip, so the frosted/refracted body never bleeds past the rounded
+  // border into the rect subregion.
+  const aaCov = 1.5 * (pxW > pxH ? pxW : pxH);
   const invW = hw > 0 ? 1 / hw : 0;
   const invH = hh > 0 ? 1 / hh : 0;
   const half = size >> 1;
@@ -137,6 +142,11 @@ export function generateDisplacementMap(canvas, opts) {
         (ox || oy ? Math.sqrt(ox * ox + oy * oy) : 0) +
         Math.min(Math.max(mx, my), 0) -
         outerR;
+      // Rounded coverage (alpha). 1 inside the rounded rect, 0 outside, with a
+      // ~1.5px anti-aliased band on the border. Symmetric, so it is identical
+      // for all four mirrored points.
+      const cov = sdfBoundary ? clamp01(0.5 - sdf / aaCov) : 1;
+      const aByte = byte(cov * 255);
 
       const tl = (row * size + col) * 4;
       const tr = (row * size + rightCol) * 4;
@@ -209,15 +219,15 @@ export function generateDisplacementMap(canvas, opts) {
           blueAnti = byte(127 * Math.min(1, anti) + 128);
         }
 
-        data[tl] = redLeft; data[tl + 1] = greenTop; data[tl + 2] = blueDiag; data[tl + 3] = 255;
-        data[tr] = redRight; data[tr + 1] = greenTop; data[tr + 2] = blueAnti; data[tr + 3] = 255;
-        data[bl] = redLeft; data[bl + 1] = greenBottom; data[bl + 2] = blueAnti; data[bl + 3] = 255;
-        data[br] = redRight; data[br + 1] = greenBottom; data[br + 2] = blueDiag; data[br + 3] = 255;
+        data[tl] = redLeft; data[tl + 1] = greenTop; data[tl + 2] = blueDiag; data[tl + 3] = aByte;
+        data[tr] = redRight; data[tr + 1] = greenTop; data[tr + 2] = blueAnti; data[tr + 3] = aByte;
+        data[bl] = redLeft; data[bl + 1] = greenBottom; data[bl + 2] = blueAnti; data[bl + 3] = aByte;
+        data[br] = redRight; data[br + 1] = greenBottom; data[br + 2] = blueDiag; data[br + 3] = aByte;
       } else {
-        data[tl] = data[tl + 1] = data[tl + 2] = 128; data[tl + 3] = 255;
-        data[tr] = data[tr + 1] = data[tr + 2] = 128; data[tr + 3] = 255;
-        data[bl] = data[bl + 1] = data[bl + 2] = 128; data[bl + 3] = 255;
-        data[br] = data[br + 1] = data[br + 2] = 128; data[br + 3] = 255;
+        data[tl] = data[tl + 1] = data[tl + 2] = 128; data[tl + 3] = aByte;
+        data[tr] = data[tr + 1] = data[tr + 2] = 128; data[tr + 3] = aByte;
+        data[bl] = data[bl + 1] = data[bl + 2] = 128; data[bl + 3] = aByte;
+        data[br] = data[br + 1] = data[br + 2] = 128; data[br + 3] = aByte;
       }
     }
   }
