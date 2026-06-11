@@ -290,20 +290,20 @@
                   <feComposite in="blendedSmooth" in2="roundMask" operator="in" result="lensResult" />
                   <feComposite in="SourceGraphic" in2="roundMask" operator="out" result="holedSG" />
                   <feComposite in="lensResult" in2="holedSG" operator="over" result="lensOnScene" />
-                  <!-- Specular rim highlight, part of the material. The map's BLUE
-                       channel encodes a THIN SDF rim band (glass.js) modulated by the
-                       light-facing direction. We map blue (128=none..255=full) to a
-                       white layer's alpha, optionally soften it a hair, clip it to the
-                       rounded lens, and SCREEN it on top. This follows the true rounded
-                       border instead of the old wide CSS shell streak.
-                       alpha = blue_norm * (255/127) - 128/127. -->
-                  <feColorMatrix in="rawMapUnfiltered" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 2.00787 0 -1.00787" result="specWhiteRaw" />
-                  <feComponentTransfer in="specWhiteRaw" result="specWhite">
-                    <feFuncA id="feSpecGain" type="linear" slope="1" intercept="0" />
-                  </feComponentTransfer>
-                  <feGaussianBlur id="feSpecBlur" in="specWhite" stdDeviation="0" result="specSoft" />
-                  <feComposite in="specSoft" in2="roundMask" operator="in" result="specClipped" />
-                  <feBlend in="specClipped" in2="lensOnScene" mode="screen" />
+                  <!-- Paired Liquid Glass bevel rim. A separate spec map encodes:
+                       RED   = inner white glint
+                       GREEN = outer dark bevel/shadow
+                       Both are the same rounded SDF edge band, split by opposite sides
+                       of the light direction, then layered as dark multiply below white
+                       screen. This creates the crossed white/dark rim seen in Liquid
+                       Glass instead of a single flat border. -->
+                  <feImage id="feSpecMap" preserveAspectRatio="none" result="specMap" />
+                  <feColorMatrix in="specMap" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 1 0 0 0" result="darkRimRaw" />
+                  <feComposite in="darkRimRaw" in2="roundMask" operator="in" result="darkRim" />
+                  <feBlend in="darkRim" in2="lensOnScene" mode="multiply" result="withDarkRim" />
+                  <feColorMatrix in="specMap" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0" result="whiteRimRaw" />
+                  <feComposite in="whiteRimRaw" in2="roundMask" operator="in" result="whiteRim" />
+                  <feBlend in="whiteRim" in2="withDarkRim" mode="screen" />
                 </filter>
               </defs>
             </svg>

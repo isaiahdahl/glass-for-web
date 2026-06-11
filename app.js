@@ -47,6 +47,7 @@ const state = {
 let darkMode = false;
 let mapUrl = "";
 let maskUrl = "";
+let specUrl = "";
 let stageRect = { w: 0, h: 0 };
 
 const ua = navigator.userAgent;
@@ -64,16 +65,16 @@ const controlsEl = document.getElementById("controls");
 const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feRoundMask = document.getElementById("feRoundMask");
+const feSpecMap = document.getElementById("feSpecMap");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
-const feSpecGain = document.getElementById("feSpecGain");
-const feSpecBlur = document.getElementById("feSpecBlur");
 
 const mapCanvas = document.createElement("canvas");
 const maskCanvas = document.createElement("canvas");
+const specCanvas = document.createElement("canvas");
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -112,6 +113,37 @@ function buildScene(container) {
   container.replaceChildren();
 }
 
+function roundedRectSdf(px, py, hw, hh, r) {
+  const x = Math.abs(px);
+  const y = Math.abs(py);
+  const mx = x - hw + r;
+  const my = y - hh + r;
+  const ox = Math.max(mx, 0);
+  const oy = Math.max(my, 0);
+  return (
+    (ox || oy ? Math.sqrt(ox * ox + oy * oy) : 0) +
+    Math.min(Math.max(mx, my), 0) -
+    r
+  );
+}
+
+function roundedRectNormal(px, py, hw, hh, r) {
+  const sx = px < 0 ? -1 : 1;
+  const sy = py < 0 ? -1 : 1;
+  const ax = Math.abs(px);
+  const ay = Math.abs(py);
+  const mx = ax - hw + r;
+  const my = ay - hh + r;
+  const ox = Math.max(mx, 0);
+  const oy = Math.max(my, 0);
+  if (ox || oy) {
+    const len = Math.max(0.0001, Math.sqrt(ox * ox + oy * oy));
+    return { x: sx * ox / len, y: sy * oy / len };
+  }
+  if (mx > my) return { x: sx, y: 0 };
+  return { x: 0, y: sy };
+}
+
 function generateRoundMask(canvas) {
   const size = MAP_SIZE;
   canvas.width = size;
@@ -130,18 +162,63 @@ function generateRoundMask(canvas) {
     const y = Math.abs((row + 0.5) * pxH - hh);
     const my = y - hh + r;
     for (let col = 0; col < size; col++) {
-      const x = Math.abs((col + 0.5) * pxW - hw);
-      const mx = x - hw + r;
-      const ox = Math.max(mx, 0);
-      const oy = Math.max(my, 0);
-      const sdf =
-        (ox || oy ? Math.sqrt(ox * ox + oy * oy) : 0) +
-        Math.min(Math.max(mx, my), 0) -
-        r;
+      const x = (col + 0.5) * pxW - hw;
+      const sdf = roundedRectSdf(x, y, hw, hh, r);
       const cov = Math.max(0, Math.min(1, 0.5 - sdf / aa));
       const v = Math.max(0, Math.min(255, (cov * 255 + 0.5) | 0));
       const i = (row * size + col) * 4;
       data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
+function generateRimSpecMap(canvas) {
+  const size = MAP_SIZE;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+  const hw = state.width;
+  const hh = state.height;
+  const r = Math.min(state.borderRadius, Math.min(hw, hh));
+  const pxW = (2 * hw) / size;
+  const pxH = (2 * hh) / size;
+  const strength = Math.max(0, Math.min(1, state.edgeHighlight));
+  const angle = (state.specularAngle * Math.PI) / 180;
+  // Light vector. Negative Y is up in screen space; the angle slider rotates
+  // the paired white/dark bevel around the rounded rim.
+  const lx = -Math.cos(angle);
+  const ly = -Math.sin(angle);
+  const darkWidth = 5.0;
+  const whiteStart = 0.7;
+  const whiteWidth = 1.35;
+  for (let row = 0; row < size; row++) {
+    const y = (row + 0.5) * pxH - hh;
+    for (let col = 0; col < size; col++) {
+      const x = (col + 0.5) * pxW - hw;
+      const sdf = roundedRectSdf(x, y, hw, hh, r);
+      const d = Math.max(0, -sdf); // distance inward from outer edge
+      const n = roundedRectNormal(x, y, hw, hh, r);
+      const facing = n.x * lx + n.y * ly;
+
+      // Dark bevel: broad at the outside edge, decays inward.
+      const darkBand = Math.max(0, 1 - d / darkWidth);
+      // White glint: offset inward and much thinner, so it appears to cross
+      // over the dark band instead of sitting on the exact same line.
+      const w = 1 - Math.abs(d - whiteStart) / whiteWidth;
+      const whiteBand = Math.max(0, w);
+
+      const white = strength * whiteBand * Math.max(0, facing);
+      const dark = strength * 0.75 * darkBand * Math.max(0, -facing);
+      const i = (row * size + col) * 4;
+      data[i] = Math.max(0, Math.min(255, (white * 255 + 0.5) | 0));
+      data[i + 1] = Math.max(0, Math.min(255, (dark * 255 + 0.5) | 0));
+      data[i + 2] = 0;
       data[i + 3] = 255;
     }
   }
@@ -160,12 +237,12 @@ function regenMap() {
     sdfBoundary: true,
     edgeFalloff: true,
     specularRotation: state.specularAngle,
-    // No broad glow/sheen. Liquid Glass reads cleaner as a frosted/refracted
-    // body plus one thin, sharp topmost rim highlight.
+    // Specular/bevel is rendered from a separate paired rim map below. Keep the
+    // displacement map focused on refraction only.
     glowStrength: 0,
     glowSpread: 1,
     glowExponent: 1.5,
-    edgeStrength: state.edgeHighlight,
+    edgeStrength: 0,
     edgeWidth: 1.1,
     edgeExponent: 1.5,
     domeDepth: state.curvature,
@@ -173,12 +250,15 @@ function regenMap() {
   });
 
   generateRoundMask(maskCanvas);
+  generateRimSpecMap(specCanvas);
 
   mapUrl = mapCanvas.toDataURL("image/png");
   maskUrl = maskCanvas.toDataURL("image/png");
+  specUrl = specCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
   applyDeferredHref(feMap, mapUrl, "map");
   applyDeferredHref(feRoundMask, maskUrl, "mask");
+  applyDeferredHref(feSpecMap, specUrl, "spec");
 }
 
 // Aave's flicker fix (reverse-engineered): the synchronous filter-id bump that
@@ -191,6 +271,7 @@ function regenMap() {
 const deferredHrefs = {
   map: { hasHref: false, pendingUrl: null, timer: 0 },
   mask: { hasHref: false, pendingUrl: null, timer: 0 },
+  spec: { hasHref: false, pendingUrl: null, timer: 0 },
 };
 function applyDeferredHref(el, url, key) {
   const slot = deferredHrefs[key];
@@ -235,6 +316,10 @@ function updateFilterPrimitives(fullW, fullH) {
   feRoundMask.setAttribute("y", mapY);
   feRoundMask.setAttribute("width", mapW);
   feRoundMask.setAttribute("height", mapH);
+  feSpecMap.setAttribute("x", mapX);
+  feSpecMap.setAttribute("y", mapY);
+  feSpecMap.setAttribute("width", mapW);
+  feSpecMap.setAttribute("height", mapH);
 
   // Clip the lens-producing primitives to the lens rect (Aave's `data-lens`
   // subregion). This is what makes the hole-and-fill work: the displacement
@@ -291,17 +376,6 @@ function updateFilterPrimitives(fullW, fullH) {
     );
   }
 
-  // In-filter specular rim. The thin rim band + light-facing direction are
-  // baked into the map's blue channel (driven by Edge Highlight + Specular
-  // Angle). Keep it essentially unblurred so it reads as a crisp topmost glint.
-  if (feSpecGain) feSpecGain.setAttribute("slope", "1");
-  if (feSpecBlur) {
-    const specBlurPx = 0;
-    feSpecBlur.setAttribute(
-      "stdDeviation",
-      `${specBlurPx / sw} ${specBlurPx / sh}`,
-    );
-  }
 }
 
 function render() {
