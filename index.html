@@ -281,13 +281,12 @@
                        omitted for exact parity.) -->
                   <feGaussianBlur id="feFinalBlur" in="blended" stdDeviation="0" result="blendedSmooth" />
                   <!-- Rounded clip + hole-and-fill from a SINGLE rounded mask.
-                       The map's ALPHA channel is baked as anti-aliased rounded-rect
-                       coverage (glass.js). We turn it into a white rounded shape
-                       (roundMask), clip the frosted/refracted body to it (operator=in),
-                       and punch the SAME rounded hole in the sharp scene. This replaces
-                       the old rectangular feFlood mask, so a heavy frost blur no longer
-                       bleeds past the rounded corners into the rect subregion. -->
-                  <feColorMatrix in="rawMapUnfiltered" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0" result="roundMask" />
+                       Use an explicit opaque RGB mask image (white inside the rounded
+                       lens, black outside), then convert its RED channel to alpha.
+                       This avoids relying on feImage PNG alpha in Safari/WebKit, which
+                       can leak the blurred body as a rectangular primitive subregion. -->
+                  <feImage id="feRoundMask" preserveAspectRatio="none" result="roundMaskRGB" />
+                  <feColorMatrix in="roundMaskRGB" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0" result="roundMask" />
                   <feComposite in="blendedSmooth" in2="roundMask" operator="in" result="lensResult" />
                   <feComposite in="SourceGraphic" in2="roundMask" operator="out" result="holedSG" />
                   <feComposite in="lensResult" in2="holedSG" operator="over" result="lensOnScene" />

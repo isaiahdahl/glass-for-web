@@ -48,6 +48,7 @@ const state = {
 
 let darkMode = false;
 let mapUrl = "";
+let maskUrl = "";
 let stageRect = { w: 0, h: 0 };
 
 const ua = navigator.userAgent;
@@ -64,6 +65,7 @@ const controlsEl = document.getElementById("controls");
 
 const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
+const feRoundMask = document.getElementById("feRoundMask");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
@@ -73,6 +75,7 @@ const feSpecGain = document.getElementById("feSpecGain");
 const feSpecBlur = document.getElementById("feSpecBlur");
 
 const mapCanvas = document.createElement("canvas");
+const maskCanvas = document.createElement("canvas");
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -111,6 +114,43 @@ function buildScene(container) {
   container.replaceChildren();
 }
 
+function generateRoundMask(canvas) {
+  const size = MAP_SIZE;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const img = ctx.createImageData(size, size);
+  const data = img.data;
+  const hw = state.width;
+  const hh = state.height;
+  const r = Math.min(state.borderRadius, Math.min(hw, hh));
+  const pxW = (2 * hw) / size;
+  const pxH = (2 * hh) / size;
+  const aa = 1.5 * Math.max(pxW, pxH);
+  for (let row = 0; row < size; row++) {
+    const y = Math.abs((row + 0.5) * pxH - hh);
+    const my = y - hh + r;
+    for (let col = 0; col < size; col++) {
+      const x = Math.abs((col + 0.5) * pxW - hw);
+      const mx = x - hw + r;
+      const ox = Math.max(mx, 0);
+      const oy = Math.max(my, 0);
+      const sdf =
+        (ox || oy ? Math.sqrt(ox * ox + oy * oy) : 0) +
+        Math.min(Math.max(mx, my), 0) -
+        r;
+      const cov = Math.max(0, Math.min(1, 0.5 - sdf / aa));
+      const v = Math.max(0, Math.min(255, (cov * 255 + 0.5) | 0));
+      const i = (row * size + col) * 4;
+      data[i] = data[i + 1] = data[i + 2] = v;
+      data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
 // ── displacement map regeneration ────────────────────────────────────────
 function regenMap() {
   generateDisplacementMap(mapCanvas, {
@@ -132,9 +172,13 @@ function regenMap() {
     splayAmount: state.splay,
   });
 
+  generateRoundMask(maskCanvas);
+
   mapUrl = mapCanvas.toDataURL("image/png");
+  maskUrl = maskCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
-  applyMapHref(mapUrl);
+  applyDeferredHref(feMap, mapUrl, "map");
+  applyDeferredHref(feRoundMask, maskUrl, "mask");
 }
 
 // Aave's flicker fix (reverse-engineered): the synchronous filter-id bump that
@@ -144,25 +188,28 @@ function regenMap() {
 // no/!wrong refraction. So on Safari we defer the href swap to a separate
 // macrotask (coalesced), decoupled from the id bump. The new map then decodes
 // in place one frame later, which is imperceptible during a drag.
-let feMapHasHref = false;
-let pendingMapUrl = null;
-let pendingMapTimer = 0;
-function applyPendingMap() {
-  pendingMapTimer = 0;
-  if (pendingMapUrl == null) return;
-  setHref(feMap, pendingMapUrl);
-  pendingMapUrl = null;
-}
-function applyMapHref(url) {
-  if (!isSafariLike || !feMapHasHref) {
-    // First map (or Chromium, which re-renders attribute changes natively):
-    // set synchronously so there's never an undisplaced first frame.
-    setHref(feMap, url);
-    feMapHasHref = true;
+const deferredHrefs = {
+  map: { hasHref: false, pendingUrl: null, timer: 0 },
+  mask: { hasHref: false, pendingUrl: null, timer: 0 },
+};
+function applyDeferredHref(el, url, key) {
+  const slot = deferredHrefs[key];
+  if (!isSafariLike || !slot.hasHref) {
+    // First image (or Chromium, which re-renders attribute changes natively):
+    // set synchronously so there's never an undisplaced/unmasked first frame.
+    setHref(el, url);
+    slot.hasHref = true;
     return;
   }
-  pendingMapUrl = url;
-  if (!pendingMapTimer) pendingMapTimer = setTimeout(applyPendingMap, 0);
+  slot.pendingUrl = url;
+  if (!slot.timer) {
+    slot.timer = setTimeout(() => {
+      slot.timer = 0;
+      if (slot.pendingUrl == null) return;
+      setHref(el, slot.pendingUrl);
+      slot.pendingUrl = null;
+    }, 0);
+  }
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -176,10 +223,18 @@ function updateFilterPrimitives(fullW, fullH) {
   const sw = Math.max(1, stageRect.w), sh = Math.max(1, stageRect.h);
   const x = state.posX * sw - fullW / 2;
   const y = state.posY * sh - fullH / 2;
-  feMap.setAttribute("x", String(x / sw));
-  feMap.setAttribute("y", String(y / sh));
-  feMap.setAttribute("width", String(fullW / sw));
-  feMap.setAttribute("height", String(fullH / sh));
+  const mapX = String(x / sw);
+  const mapY = String(y / sh);
+  const mapW = String(fullW / sw);
+  const mapH = String(fullH / sh);
+  feMap.setAttribute("x", mapX);
+  feMap.setAttribute("y", mapY);
+  feMap.setAttribute("width", mapW);
+  feMap.setAttribute("height", mapH);
+  feRoundMask.setAttribute("x", mapX);
+  feRoundMask.setAttribute("y", mapY);
+  feRoundMask.setAttribute("width", mapW);
+  feRoundMask.setAttribute("height", mapH);
 
   // Clip the lens-producing primitives to the lens rect (Aave's `data-lens`
   // subregion). This is what makes the hole-and-fill work: the displacement
