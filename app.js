@@ -24,7 +24,6 @@ const SLIDERS = [
   { key: "splay", label: "Splay", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "chroma", label: "Chroma", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "blur", label: "Blur", min: 0, max: 30, step: 0.5, dp: 1 },
-  { key: "glow", label: "Glow", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
 ];
@@ -39,7 +38,6 @@ const state = {
   splay: 1,
   chroma: 0.2,
   blur: 8,
-  glow: 0,
   edgeHighlight: 0,
   specularAngle: 45,
   posX: 0.5,
@@ -162,11 +160,13 @@ function regenMap() {
     sdfBoundary: true,
     edgeFalloff: true,
     specularRotation: state.specularAngle,
-    glowStrength: state.glow,
+    // No broad glow/sheen. Liquid Glass reads cleaner as a frosted/refracted
+    // body plus one thin, sharp topmost rim highlight.
+    glowStrength: 0,
     glowSpread: 1,
     glowExponent: 1.5,
     edgeStrength: state.edgeHighlight,
-    edgeWidth: 3,
+    edgeWidth: 1.1,
     edgeExponent: 1.5,
     domeDepth: state.curvature,
     splayAmount: state.splay,
@@ -292,12 +292,11 @@ function updateFilterPrimitives(fullW, fullH) {
   }
 
   // In-filter specular rim. The thin rim band + light-facing direction are
-  // baked into the map's blue channel (driven by Edge Highlight / Glow /
-  // Specular Angle); feSpecGain is a master strength, feSpecBlur softens the
-  // rim by a fraction of a pixel so it reads as a glint, not a hard line.
+  // baked into the map's blue channel (driven by Edge Highlight + Specular
+  // Angle). Keep it essentially unblurred so it reads as a crisp topmost glint.
   if (feSpecGain) feSpecGain.setAttribute("slope", "1");
   if (feSpecBlur) {
-    const specBlurPx = 0.6;
+    const specBlurPx = 0;
     feSpecBlur.setAttribute(
       "stdDeviation",
       `${specBlurPx / sw} ${specBlurPx / sh}`,
@@ -388,7 +387,6 @@ function buildControls() {
         "depth",
         "curvature",
         "splay",
-        "glow",
         "edgeHighlight",
         "specularAngle",
       ];
