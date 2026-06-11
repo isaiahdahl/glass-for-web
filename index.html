@@ -302,8 +302,11 @@
                   <feComposite in="darkRimRaw" in2="roundMask" operator="in" result="darkRim" />
                   <feBlend in="darkRim" in2="lensOnScene" mode="multiply" result="withDarkRim" />
                   <feColorMatrix in="specMap" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0" result="whiteRimRaw" />
-                  <feComposite in="whiteRimRaw" in2="roundMask" operator="in" result="whiteRim" />
-                  <feBlend in="whiteRim" in2="withDarkRim" mode="screen" />
+                  <feComponentTransfer in="whiteRimRaw" result="whiteRimGain">
+                    <feFuncA id="feWhiteRimGain" type="linear" slope="1" intercept="0" />
+                  </feComponentTransfer>
+                  <feComposite in="whiteRimGain" in2="roundMask" operator="in" result="whiteRim" />
+                  <feComposite in="whiteRim" in2="withDarkRim" operator="over" />
                 </filter>
               </defs>
             </svg>

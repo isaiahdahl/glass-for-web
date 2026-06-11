@@ -66,6 +66,7 @@ const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feRoundMask = document.getElementById("feRoundMask");
 const feSpecMap = document.getElementById("feSpecMap");
+const feWhiteRimGain = document.getElementById("feWhiteRimGain");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
@@ -222,8 +223,13 @@ function generateRimSpecMap(canvas) {
       const w = 1 - Math.abs(d - whiteStart) / whiteWidth;
       const whiteBand = Math.max(0, w);
 
-      const white = strength * whiteBand * Math.pow(alongLight, 1.35);
-      const dark = strength * 0.55 * darkBand * Math.pow(alongPerp, 1.2);
+      // Light mode needs a much brighter white rim; screen blending barely
+      // moves pixels that are already pale. Boost the generated alpha there,
+      // while keeping the dark bevel a bit quieter so the edge stays glassy.
+      const whiteBoost = darkMode ? 1.0 : 2.6;
+      const darkBoost = darkMode ? 0.55 : 0.28;
+      const white = strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.35);
+      const dark = strength * darkBoost * darkBand * Math.pow(alongPerp, 1.2);
       const i = (row * size + col) * 4;
       data[i] = Math.max(0, Math.min(255, (white * 255 + 0.5) | 0));
       data[i + 1] = Math.max(0, Math.min(255, (dark * 255 + 0.5) | 0));
@@ -385,6 +391,11 @@ function updateFilterPrimitives(fullW, fullH) {
     );
   }
 
+  // Extra alpha gain on the white rim in light mode. This makes the glint read
+  // as white on bright backgrounds instead of dissolving into the frost.
+  if (feWhiteRimGain) {
+    feWhiteRimGain.setAttribute("slope", darkMode ? "1" : "2.1");
+  }
 }
 
 function render() {
