@@ -69,6 +69,8 @@ const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
 const feDispG = document.getElementById("feDispG");
 const feDispB = document.getElementById("feDispB");
+const feSpecGain = document.getElementById("feSpecGain");
+const feSpecBlur = document.getElementById("feSpecBlur");
 
 const mapCanvas = document.createElement("canvas");
 
@@ -238,6 +240,18 @@ function updateFilterPrimitives(fullW, fullH) {
     );
   }
 
+  // In-filter specular rim. The thin rim band + light-facing direction are
+  // baked into the map's blue channel (driven by Edge Highlight / Glow /
+  // Specular Angle); feSpecGain is a master strength, feSpecBlur softens the
+  // rim by a fraction of a pixel so it reads as a glint, not a hard line.
+  if (feSpecGain) feSpecGain.setAttribute("slope", "1");
+  if (feSpecBlur) {
+    const specBlurPx = 0.6;
+    feSpecBlur.setAttribute(
+      "stdDeviation",
+      `${specBlurPx / sw} ${specBlurPx / sh}`,
+    );
+  }
 }
 
 function render() {
@@ -251,17 +265,14 @@ function render() {
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
-  // The displacement map's blue/specular channel is not part of the parity
-  // SVG composite, so make the highlight visibly controlled on the separate
-  // outline shell instead. This does not affect filter geometry/refraction.
+  // The specular rim now lives INSIDE the SVG filter (map blue channel), so it
+  // follows the true rounded border. The CSS shell keeps only the thin 1px
+  // glass edge line + a faint top sheen; its wide directional streak is off.
   lensOutlineEl.style.setProperty("--spec-angle", `${state.specularAngle}deg`);
-  lensOutlineEl.style.setProperty(
-    "--spec-opacity",
-    clamp01(state.edgeHighlight * 0.55).toFixed(3),
-  );
+  lensOutlineEl.style.setProperty("--spec-opacity", "0");
   lensOutlineEl.style.setProperty(
     "--glow-opacity",
-    clamp01(state.glow * 1.0).toFixed(3),
+    clamp01(state.glow * 0.5).toFixed(3),
   );
 
   // The separate lens layer is unused; Aave's playground applies the SVG
