@@ -84,33 +84,25 @@ function clamp01(v) {
 
 let filterApplied = false;
 let filterVersion = 0;
-function applyFreshFilterId() {
-  // Set the filter URL on the scene once, with a stable id. We do NOT cycle
-  // the id on parameter/map changes: those change the feImage href, which
-  // Safari re-renders on its own, and cycling there caused a flicker (the
-  // fresh filter waits on the new map decode and the hole-and-fill briefly
-  // shows the empty lens hole).
+function commitFilterUpdate() {
+  // Source-derived Aave path: mutate the active filter primitives, then give
+  // Safari a fresh id immediately. No cloning/double-buffering and no rAF
+  // delay; their bundle directly versions the active filter element.
+  if (isSafariLike) {
+    filterVersion += 1;
+    const id = `${FILTER_BASE_ID}-${filterVersion}`;
+    filterEl.id = id;
+    const url = `url(#${id})`;
+    sceneEl.style.filter = url;
+    sceneEl.style.webkitFilter = url;
+    filterApplied = true;
+    return;
+  }
   if (filterApplied) return;
   const url = `url(#${FILTER_BASE_ID})`;
   sceneEl.style.filter = url;
   sceneEl.style.webkitFilter = url;
   filterApplied = true;
-}
-
-function forceSafariFilterRefresh() {
-  // Safari caches SVG filter output and will NOT re-render when only the lens
-  // POSITION changes (feImage/feLensMask x/y during a drag) — the morphing
-  // appears frozen in place. Cycling the filter id forces a re-render. Unlike
-  // a parameter change, a drag does not change the map href, so the feImage is
-  // already decoded and the re-render is immediate — no flicker. Chromium
-  // re-renders on attribute changes natively, so it's a Safari-only nudge.
-  if (!isSafariLike) return;
-  filterVersion += 1;
-  const id = `${FILTER_BASE_ID}-${filterVersion}`;
-  filterEl.id = id;
-  const url = `url(#${id})`;
-  sceneEl.style.filter = url;
-  sceneEl.style.webkitFilter = url;
 }
 
 // ── live DOM scene ───────────────────────────────────────────────────────
@@ -146,7 +138,6 @@ function regenMap() {
   mapUrl = mapCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
   setHref(feMap, mapUrl);
-  applyFreshFilterId();
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -247,11 +238,17 @@ function render() {
     clamp01(state.glow * 1.0).toFixed(3),
   );
 
-  // The separate lens layer is unused now (filter lives on the scene).
+  // The separate lens layer is unused; Aave's playground applies the SVG
+  // filter to the full content scene and clips the output with lens-region
+  // primitives inside the filter graph.
   lensLayerEl.style.display = "none";
+  lensLayerEl.style.filter = "";
+  lensLayerEl.style.webkitFilter = "";
+  lensLayerEl.style.clipPath = "";
+  lensLayerEl.style.webkitClipPath = "";
 
   updateFilterPrimitives(fullW, fullH);
-  applyFreshFilterId();
+  commitFilterUpdate();
 
   const mr = mapStageEl.getBoundingClientRect();
   mapImg.style.width = `${fullW}px`;
@@ -260,10 +257,15 @@ function render() {
   mapImg.style.top = `${state.posY * mr.height - fullH / 2}px`;
 }
 
+function updateGlass({ map = false } = {}) {
+  if (map) regenMap();
+  render();
+}
+
 function resize() {
   const r = stageEl.getBoundingClientRect();
   stageRect = { w: r.width, h: r.height };
-  render();
+  updateGlass();
 }
 
 // ── controls UI ──────────────────────────────────────────────────────────
@@ -307,8 +309,7 @@ function buildControls() {
         "edgeHighlight",
         "specularAngle",
       ];
-      if (mapKeys.includes(s.key)) regenMap();
-      render();
+      updateGlass({ map: mapKeys.includes(s.key) });
     });
     row.append(label, input, val);
     controlsEl.append(row);
@@ -336,10 +337,7 @@ function attachDrag(el) {
     const ry = (e.clientY - t.top) / t.height;
     state.posX = Math.max(0, Math.min(1, rx - off.x));
     state.posY = Math.max(0, Math.min(1, ry - off.y));
-    render();
-    // Position-only change: nudge Safari to re-render the filter (it caches
-    // otherwise). No map href change here, so no flicker.
-    forceSafariFilterRefresh();
+    updateGlass();
   });
   const up = () => {
     dragging = false;
@@ -355,7 +353,9 @@ function applyTheme(theme, redraw = true) {
   document.body.classList.toggle("dark", darkMode);
   const label = document.querySelector("[data-theme-label]");
   if (label) label.textContent = darkMode ? "Light" : "Dark";
-  if (redraw) render();
+  if (redraw) {
+    updateGlass();
+  }
 }
 
 function setupTheme() {
@@ -413,11 +413,7 @@ function boot() {
     set(partial) {
       Object.assign(state, partial);
       syncControlWidgets();
-      regenMap();
-      render();
-      // Programmatic updates may move the lens; force a Safari re-render so
-      // position changes apply (mirrors the drag handler).
-      forceSafariFilterRefresh();
+      updateGlass({ map: true });
     },
     setTheme(theme) {
       try {

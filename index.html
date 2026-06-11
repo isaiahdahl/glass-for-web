@@ -258,12 +258,12 @@
       }
       body:not(.dark) .stage {
         --scene-image: url("./assets/demo-bg.png");
-        --color-image: url("./assets/color-bg-light.svg");
+        --color-image: url("./assets/color-bg-light.png");
         --frost-color: #e6e0ff;
       }
       body.dark .stage {
         --scene-image: url("./assets/demo-bg-dark.png");
-        --color-image: url("./assets/color-bg-dark.svg");
+        --color-image: url("./assets/color-bg-dark.png");
         --frost-color: #05030d;
       }
       .theme-toggle:hover { border-color: var(--primary); }
@@ -272,6 +272,19 @@
         height: 9px;
         border-radius: 50%;
         background: var(--primary);
+      }
+      .versionBadge {
+        position: fixed;
+        left: 50%;
+        bottom: 8px;
+        transform: translateX(-50%);
+        color: var(--muted);
+        opacity: 0.35;
+        font: 11px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        letter-spacing: 0.02em;
+        pointer-events: none;
+        user-select: none;
+        z-index: 10;
       }
       @media (max-width: 760px) {
         .playground, .controls { grid-template-columns: 1fr; }
@@ -349,6 +362,7 @@
       <div class="controls" id="controls"></div>
 
     </div>
+    <div class="versionBadge" aria-hidden="true">90323df+</div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
