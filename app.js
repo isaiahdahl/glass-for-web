@@ -137,7 +137,35 @@ function regenMap() {
 
   mapUrl = mapCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
-  setHref(feMap, mapUrl);
+  applyMapHref(mapUrl);
+}
+
+// Aave's flicker fix (reverse-engineered): the synchronous filter-id bump that
+// forces Safari to re-render must run against the PREVIOUS, already-decoded
+// feImage. If we set the new map href and bump the id in the same frame, Safari
+// rebuilds the filter against a not-yet-decoded image -> a flicker frame with
+// no/!wrong refraction. So on Safari we defer the href swap to a separate
+// macrotask (coalesced), decoupled from the id bump. The new map then decodes
+// in place one frame later, which is imperceptible during a drag.
+let feMapHasHref = false;
+let pendingMapUrl = null;
+let pendingMapTimer = 0;
+function applyPendingMap() {
+  pendingMapTimer = 0;
+  if (pendingMapUrl == null) return;
+  setHref(feMap, pendingMapUrl);
+  pendingMapUrl = null;
+}
+function applyMapHref(url) {
+  if (!isSafariLike || !feMapHasHref) {
+    // First map (or Chromium, which re-renders attribute changes natively):
+    // set synchronously so there's never an undisplaced first frame.
+    setHref(feMap, url);
+    feMapHasHref = true;
+    return;
+  }
+  pendingMapUrl = url;
+  if (!pendingMapTimer) pendingMapTimer = setTimeout(applyPendingMap, 0);
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -257,30 +285,10 @@ function render() {
   mapImg.style.top = `${state.posY * mr.height - fullH / 2}px`;
 }
 
-// Aave's regen-settle behavior (reverse-engineered from their bundle): during
-// a continuous gesture they do NOT re-bake the displacement map every frame.
-// They bake once on the leading edge, then keep stretching that same map via
-// the per-frame geometry/region update, and only re-bake after the gesture
-// settles. Re-baking every frame means a fresh feImage href + PNG decode each
-// frame, which is the Safari flicker. We mirror that: leading bake + settle
-// bake, cheap geometry render in between.
-const REGEN_SETTLE_MS = 110;
-let regenSettleTimer = 0;
-let regenArmed = true;
 function updateGlass({ map = false } = {}) {
-  if (map) {
-    if (regenArmed) {
-      regenArmed = false; // leading bake — crisp at gesture start
-      regenMap();
-    }
-    clearTimeout(regenSettleTimer);
-    regenSettleTimer = setTimeout(() => {
-      regenSettleTimer = 0;
-      regenArmed = true; // re-arm leading for the next gesture
-      regenMap(); // settle bake — crisp at the final value
-      render();
-    }, REGEN_SETTLE_MS);
-  }
+  // Per-frame, lockstep: regenerate the map (deferred href on Safari) AND
+  // update geometry every frame so the glass tracks the box exactly.
+  if (map) regenMap();
   render();
 }
 
