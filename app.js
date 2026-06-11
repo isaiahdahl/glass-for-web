@@ -257,8 +257,30 @@ function render() {
   mapImg.style.top = `${state.posY * mr.height - fullH / 2}px`;
 }
 
+// Aave's regen-settle behavior (reverse-engineered from their bundle): during
+// a continuous gesture they do NOT re-bake the displacement map every frame.
+// They bake once on the leading edge, then keep stretching that same map via
+// the per-frame geometry/region update, and only re-bake after the gesture
+// settles. Re-baking every frame means a fresh feImage href + PNG decode each
+// frame, which is the Safari flicker. We mirror that: leading bake + settle
+// bake, cheap geometry render in between.
+const REGEN_SETTLE_MS = 110;
+let regenSettleTimer = 0;
+let regenArmed = true;
 function updateGlass({ map = false } = {}) {
-  if (map) regenMap();
+  if (map) {
+    if (regenArmed) {
+      regenArmed = false; // leading bake — crisp at gesture start
+      regenMap();
+    }
+    clearTimeout(regenSettleTimer);
+    regenSettleTimer = setTimeout(() => {
+      regenSettleTimer = 0;
+      regenArmed = true; // re-arm leading for the next gesture
+      regenMap(); // settle bake — crisp at the final value
+      render();
+    }, REGEN_SETTLE_MS);
+  }
   render();
 }
 
@@ -413,7 +435,8 @@ function boot() {
     set(partial) {
       Object.assign(state, partial);
       syncControlWidgets();
-      updateGlass({ map: true });
+      regenMap();
+      render();
     },
     setTheme(theme) {
       try {
