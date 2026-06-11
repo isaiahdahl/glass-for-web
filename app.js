@@ -39,8 +39,8 @@ const state = {
   splay: 1,
   chroma: 0.2,
   blur: 8,
-  glow: 0.1,
-  edgeHighlight: 0.25,
+  glow: 0,
+  edgeHighlight: 0,
   specularAngle: 45,
   posX: 0.5,
   posY: 0.5,
@@ -77,10 +77,6 @@ const mapCanvas = document.createElement("canvas");
 function setHref(el, href) {
   el.setAttribute("href", href);
   el.setAttributeNS("http://www.w3.org/1999/xlink", "href", href);
-}
-
-function clamp01(v) {
-  return Math.max(0, Math.min(1, v));
 }
 
 let filterApplied = false;
@@ -265,15 +261,8 @@ function render() {
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
-  // The specular rim now lives INSIDE the SVG filter (map blue channel), so it
-  // follows the true rounded border. The CSS shell keeps only the thin 1px
-  // glass edge line + a faint top sheen; its wide directional streak is off.
-  lensOutlineEl.style.setProperty("--spec-angle", `${state.specularAngle}deg`);
-  lensOutlineEl.style.setProperty("--spec-opacity", "0");
-  lensOutlineEl.style.setProperty(
-    "--glow-opacity",
-    clamp01(state.glow * 0.5).toFixed(3),
-  );
+  // Blank slate shell: no CSS border/sheen/streak. The only visible edge
+  // treatment is the in-filter material rim driven by the map's blue channel.
 
   // The separate lens layer is unused; Aave's playground applies the SVG
   // filter to the full content scene and clips the output with lens-region

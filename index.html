@@ -106,65 +106,14 @@
         overflow: hidden;
         will-change: clip-path, filter;
       }
-      /* Visual shell only; the actual refraction remains entirely in the SVG
-         filter on .scene. Keeping highlights here avoids changing Safari's
-         filter coordinate system. */
-      .lensOutline {
-        --spec-angle: 45deg;
-        --spec-opacity: 0.28;
-        --glow-opacity: 0.12;
-        --lens-edge: rgba(255, 255, 255, 0.72);
-        box-shadow:
-          0 0 0 1px var(--lens-edge),
-          0 8px 24px rgba(0, 0, 0, 0.4),
-          inset 0 1px 0 rgba(255, 255, 255, 0.45),
-          inset 0 -1px 0 rgba(255, 255, 255, 0.16);
-      }
-      body.dark .lensOutline { --lens-edge: rgba(255, 255, 255, 0.2); }
-      .lensOutline::before,
-      .lensOutline::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        pointer-events: none;
-      }
-      .lensOutline::before {
-        /* Directional specular, clipped to a rounded-rectangle rim band.
-           This must NOT cross the center of the glass; it is an edge glint. */
-        border: 5px solid transparent;
-        background:
-          linear-gradient(
-            var(--spec-angle),
-            transparent 0%,
-            transparent 22%,
-            rgba(255,255,255,0.20) 38%,
-            rgba(255,255,255,0.95) 49%,
-            rgba(255,255,255,0.24) 60%,
-            transparent 78%,
-            transparent 100%
-          ) border-box;
-        opacity: var(--spec-opacity);
-        mix-blend-mode: screen;
-        /* Safari/WebKit-friendly ring mask: visible in the border band only. */
-        -webkit-mask:
-          linear-gradient(#000 0 0) padding-box,
-          linear-gradient(#000 0 0) border-box;
-        -webkit-mask-composite: xor;
-        mask:
-          linear-gradient(#000 0 0) padding-box,
-          linear-gradient(#000 0 0) border-box;
-        mask-composite: exclude;
-      }
-      .lensOutline::after {
-        /* Soft upper/edge sheen. Controlled mainly by Glow. */
-        box-shadow:
-          inset 0 20px 24px -22px rgba(255,255,255,0.95),
-          inset 18px 0 24px -24px rgba(255,255,255,0.75),
-          inset -18px 0 24px -24px rgba(255,255,255,0.45);
-        opacity: var(--glow-opacity);
-        mix-blend-mode: screen;
-      }
+      /* BLANK SLATE. The lens edge is produced ENTIRELY by the in-filter
+         specular rim (map blue channel, screened on top of the refracted/
+         frosted body). This shell <div> is kept only to carry the lens
+         position/size for any future overlay; it draws nothing right now.
+         To re-add a thin glass line later, put a single box-shadow here, e.g.
+           .lensOutline { box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
+      */
+      .lensOutline { box-shadow: none; }
       .lensContent {
         transform-origin: top left;
       }
