@@ -94,6 +94,7 @@
         border-radius: inherit;
       }
       .lensLayer,
+      .lensShadow,
       .lensOutline {
         position: absolute;
         top: 0;
@@ -114,6 +115,9 @@
            .lensOutline { box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
       */
       .lensOutline { box-shadow: none; }
+      .lensShadow {
+        background: transparent;
+      }
       .rimCanvas,
       .rimPickupCanvas {
         position: absolute;
@@ -309,6 +313,7 @@
               <div class="lensContent" id="lensContent"></div>
             </div>
             <!-- frostVeil removed for exact Aave parity -->
+            <div class="lensShadow" id="lensShadow" aria-hidden="true"></div>
             <div class="lensOutline" id="lensOutline"><canvas class="rimCanvas" id="rimCanvas" aria-hidden="true"></canvas><canvas class="rimPickupCanvas" id="rimPickupCanvas" aria-hidden="true"></canvas></div>
           </div>
           <div class="mapStage" id="mapStage">

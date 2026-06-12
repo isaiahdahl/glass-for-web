@@ -61,6 +61,7 @@ const isSafariLike = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox|And
 const stageEl = document.getElementById("stage");
 const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
+const lensShadowEl = document.getElementById("lensShadow");
 const lensOutlineEl = document.getElementById("lensOutline");
 const rimCanvasEl = document.getElementById("rimCanvas");
 const rimPickupCanvasEl = document.getElementById("rimPickupCanvas");
@@ -575,19 +576,25 @@ function render() {
   const y = state.posY * stageRect.h - fullH / 2;
 
   // The visible lens outline sits at the lens rect (x,y, fullW x fullH).
+  lensShadowEl.style.width = `${fullW}px`;
+  lensShadowEl.style.height = `${fullH}px`;
+  lensShadowEl.style.borderRadius = `${state.borderRadius}px`;
+  lensShadowEl.style.transform = `translate(${x}px, ${y}px)`;
   lensOutlineEl.style.width = `${fullW}px`;
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
   const shadow = Math.max(0, Math.min(1, state.elementShadow));
   if (shadow > 0) {
-    const opacity = darkMode ? 0.32 * shadow : 0.34 * shadow;
-    const blur = (darkMode ? 18 : 22) * shadow;
-    const yOff = (darkMode ? 8 : 9) * shadow;
-    lensOutlineEl.style.filter = `drop-shadow(0 ${yOff.toFixed(1)}px ${blur.toFixed(1)}px rgba(0,0,0,${opacity.toFixed(3)}))`;
+    const opacity = darkMode ? 0.34 * shadow : 0.42 * shadow;
+    const blur = (darkMode ? 20 : 26) * shadow;
+    const spread = (darkMode ? -4 : -2) * shadow;
+    const yOff = (darkMode ? 9 : 10) * shadow;
+    lensShadowEl.style.boxShadow = `0 ${yOff.toFixed(1)}px ${blur.toFixed(1)}px ${spread.toFixed(1)}px rgba(0,0,0,${opacity.toFixed(3)})`;
   } else {
-    lensOutlineEl.style.filter = "none";
+    lensShadowEl.style.boxShadow = "none";
   }
+  lensOutlineEl.style.filter = "none";
   // Blank slate shell: no CSS border/sheen/streak. The edge spectacle is a
   // separate top canvas layer: dark outside the body, white just inside it.
   drawRimLayer(fullW, fullH);
