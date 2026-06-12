@@ -420,10 +420,14 @@ function drawRimLayer(fullW, fullH) {
   // SVG filter feImages and should not reintroduce Safari filter flicker.
   const darkCenter = 0.45; // positive SDF = outside the glass body
   const darkWidth = darkMode ? 1.0 : 0.82;
+  // Light mode gets a subtle inner surface shade just inside the rim. It makes
+  // the white glint pop without relying on an overly harsh black outside edge.
+  const surfaceShadeCenter = -1.6;
+  const surfaceShadeWidth = 3.2;
   const whiteCenter = -0.22; // negative SDF = just inside the body
   const whiteWidth = 0.55;
-  const whiteBoost = darkMode ? 0.95 : 2.35;
-  const darkBoost = darkMode ? 0.28 : 0.3;
+  const whiteBoost = darkMode ? 0.95 : 2.65;
+  const darkBoost = darkMode ? 0.28 : 0.22;
 
   const cx = state.posX * Math.max(1, stageRect.w);
   const cy = state.posY * Math.max(1, stageRect.h);
@@ -439,23 +443,31 @@ function drawRimLayer(fullW, fullH) {
       const alongPerp = Math.abs(n.x * px + n.y * py);
       const whiteBand = Math.max(0, 1 - Math.abs(sdf - whiteCenter) / whiteWidth);
       const darkBand = Math.max(0, 1 - Math.abs(sdf - darkCenter) / darkWidth);
-      const whiteA = Math.min(1, strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.25));
-      const darkLobe = Math.pow(alongPerp, darkMode ? 1.15 : 3.0);
-      const darkPeak = darkMode ? 1 : 1 + 2.6 * Math.pow(alongPerp, 8);
+      const surfaceShadeBand = !darkMode && sdf < 0
+        ? Math.max(0, 1 - Math.abs(sdf - surfaceShadeCenter) / surfaceShadeWidth)
+        : 0;
+      const whiteA = Math.min(1, strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.18));
+      const darkLobe = Math.pow(alongPerp, darkMode ? 1.15 : 2.75);
+      const darkPeak = darkMode ? 1 : 1 + 1.6 * Math.pow(alongPerp, 8);
       const darkA = Math.min(1, strength * darkBoost * darkPeak * darkBand * darkLobe);
-      if (whiteA <= 0 && darkA <= 0) continue;
+      const shadeA = Math.min(1, strength * 0.075 * surfaceShadeBand * (0.55 + 0.45 * alongPerp));
+      if (whiteA <= 0 && darkA <= 0 && shadeA <= 0) continue;
 
       // Base bevel stays neutral and sharp.
       const whiteRgb = [255, 255, 255];
-      const darkRgb = darkMode ? [12, 11, 18] : [22, 20, 36];
+      const darkRgb = darkMode ? [12, 11, 18] : [54, 50, 76];
+      const shadeRgb = [120, 112, 150];
 
       // Composite dark first, then white, into a single source-over neutral rim.
-      const a = whiteA + darkA * (1 - whiteA);
+      const aShade = shadeA;
+      const aDark = darkA * (1 - aShade);
+      const aWhite = whiteA * (1 - aShade) * (1 - aDark);
+      const a = aShade + aDark + aWhite;
       if (a <= 0) continue;
       const i = (row * w + col) * 4;
-      data[i] = Math.max(0, Math.min(255, ((whiteRgb[0] * whiteA + darkRgb[0] * darkA * (1 - whiteA)) / a + 0.5) | 0));
-      data[i + 1] = Math.max(0, Math.min(255, ((whiteRgb[1] * whiteA + darkRgb[1] * darkA * (1 - whiteA)) / a + 0.5) | 0));
-      data[i + 2] = Math.max(0, Math.min(255, ((whiteRgb[2] * whiteA + darkRgb[2] * darkA * (1 - whiteA)) / a + 0.5) | 0));
+      data[i] = Math.max(0, Math.min(255, ((shadeRgb[0] * aShade + darkRgb[0] * aDark + whiteRgb[0] * aWhite) / a + 0.5) | 0));
+      data[i + 1] = Math.max(0, Math.min(255, ((shadeRgb[1] * aShade + darkRgb[1] * aDark + whiteRgb[1] * aWhite) / a + 0.5) | 0));
+      data[i + 2] = Math.max(0, Math.min(255, ((shadeRgb[2] * aShade + darkRgb[2] * aDark + whiteRgb[2] * aWhite) / a + 0.5) | 0));
       data[i + 3] = Math.max(0, Math.min(255, (a * 255 + 0.5) | 0));
 
       // Separate luminous colour-pickup layer above the neutral bevel. This is
