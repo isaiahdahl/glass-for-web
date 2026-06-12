@@ -25,6 +25,8 @@ const SLIDERS = [
   { key: "chroma", label: "Chroma", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "blur", label: "Blur", min: 0, max: 30, step: 0.5, dp: 1 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
+  { key: "rimPickup", label: "Rim Pickup", min: 0, max: 1, step: 0.01, dp: 2 },
+  { key: "pickupDistance", label: "Pickup Distance", min: 0, max: 80, step: 1, dp: 0 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
 ];
 
@@ -39,6 +41,8 @@ const state = {
   chroma: 0.2,
   blur: 8,
   edgeHighlight: 0.5,
+  rimPickup: 0.35,
+  pickupDistance: 22,
   specularAngle: 90,
   posX: 0.5,
   posY: 0.5,
@@ -73,6 +77,33 @@ const feDispB = document.getElementById("feDispB");
 
 const mapCanvas = document.createElement("canvas");
 const maskCanvas = document.createElement("canvas");
+const sceneSampleCanvas = document.createElement("canvas");
+const sceneSampleCtx = sceneSampleCanvas.getContext("2d", { willReadFrequently: true });
+let sceneSampleData = null;
+let sceneSampleW = 0;
+let sceneSampleH = 0;
+let sceneSampleTheme = null;
+
+const sceneImages = {
+  light: {
+    base: loadSceneImage("./assets/demo-bg.png"),
+    color: loadSceneImage("./assets/color-bg-light.png"),
+  },
+  dark: {
+    base: loadSceneImage("./assets/demo-bg-dark.png"),
+    color: loadSceneImage("./assets/color-bg-dark.png"),
+  },
+};
+
+function loadSceneImage(src) {
+  const img = new Image();
+  img.onload = () => {
+    updateSceneSample(true);
+    drawRimLayer(2 * state.width, 2 * state.height);
+  };
+  img.src = src;
+  return img;
+}
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -236,10 +267,70 @@ function applyDeferredHref(el, url, key) {
   }
 }
 
+function drawCover(ctx, img, w, h) {
+  if (!img?.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+  const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
+function updateSceneSample(force = false) {
+  const w = Math.max(1, Math.round(stageRect.w));
+  const h = Math.max(1, Math.round(stageRect.h));
+  const theme = darkMode ? "dark" : "light";
+  if (!force && sceneSampleData && sceneSampleW === w && sceneSampleH === h && sceneSampleTheme === theme) {
+    return;
+  }
+  if (!sceneSampleCtx) return;
+  sceneSampleW = w;
+  sceneSampleH = h;
+  sceneSampleTheme = theme;
+  sceneSampleCanvas.width = w;
+  sceneSampleCanvas.height = h;
+  sceneSampleCtx.clearRect(0, 0, w, h);
+  // CSS paints the first background-image layer on top. Our CSS order is
+  // color-image, scene-image, so draw base first then colour layer.
+  drawCover(sceneSampleCtx, sceneImages[theme].base, w, h);
+  drawCover(sceneSampleCtx, sceneImages[theme].color, w, h);
+  try {
+    sceneSampleData = sceneSampleCtx.getImageData(0, 0, w, h).data;
+  } catch (_) {
+    sceneSampleData = null;
+  }
+}
+
+function sampleSceneColor(x, y) {
+  if (!sceneSampleData || sceneSampleW <= 0 || sceneSampleH <= 0) {
+    return darkMode ? [28, 24, 44] : [245, 242, 255];
+  }
+  const ix = Math.max(0, Math.min(sceneSampleW - 1, Math.round(x)));
+  const iy = Math.max(0, Math.min(sceneSampleH - 1, Math.round(y)));
+  const i = (iy * sceneSampleW + ix) * 4;
+  return [sceneSampleData[i], sceneSampleData[i + 1], sceneSampleData[i + 2]];
+}
+
+function sampleRimPickup(stageX, stageY, nx, ny) {
+  const pickup = Math.max(0, Math.min(1, state.rimPickup));
+  if (pickup <= 0) return darkMode ? [255, 255, 255] : [255, 255, 255];
+  const d = state.pickupDistance;
+  // Average a short ray outside the rim so nearby coloured UI influences the
+  // spectacle without becoming a noisy per-pixel copy of the background.
+  const distances = [Math.max(0, d - 10), d, d + 14];
+  let r = 0, g = 0, b = 0;
+  for (const dist of distances) {
+    const c = sampleSceneColor(stageX + nx * dist, stageY + ny * dist);
+    r += c[0]; g += c[1]; b += c[2];
+  }
+  return [r / distances.length, g / distances.length, b / distances.length];
+}
+
 // ── SVG filter parameter updates ─────────────────────────────────────────
 function drawRimLayer(fullW, fullH) {
+  updateSceneSample();
   const strength = Math.max(0, Math.min(1, state.edgeHighlight));
-  const pad = 6;
+  const pickup = Math.max(0, Math.min(1, state.rimPickup));
+  const pad = Math.max(6, Math.ceil(state.pickupDistance * 0.08));
   const cssW = Math.ceil(fullW + 2 * pad);
   const cssH = Math.ceil(fullH + 2 * pad);
   rimCanvasEl.style.left = `${-pad}px`;
@@ -279,6 +370,9 @@ function drawRimLayer(fullW, fullH) {
   const whiteBoost = darkMode ? 0.85 : 2.35;
   const darkBoost = darkMode ? 0.46 : 0.22;
 
+  const cx = state.posX * Math.max(1, stageRect.w);
+  const cy = state.posY * Math.max(1, stageRect.h);
+
   for (let row = 0; row < h; row++) {
     const y = (row + 0.5) / dpr - pad - hh;
     for (let col = 0; col < w; col++) {
@@ -294,11 +388,22 @@ function drawRimLayer(fullW, fullH) {
       const darkA = Math.min(1, strength * darkBoost * darkBand * Math.pow(alongPerp, 1.15));
       if (whiteA <= 0 && darkA <= 0) continue;
 
+      const sample = sampleRimPickup(cx + x, cy + y, n.x, n.y);
+      const tint = pickup * (darkMode ? 0.42 : 0.55);
+      const whiteRgb = [
+        255 * (1 - tint) + sample[0] * tint,
+        255 * (1 - tint) + sample[1] * tint,
+        255 * (1 - tint) + sample[2] * tint,
+      ];
+      const darkRgb = [sample[0] * 0.22, sample[1] * 0.22, sample[2] * 0.22];
+
       // Composite dark first, then white, into a single source-over overlay.
       const a = whiteA + darkA * (1 - whiteA);
-      const c = a > 0 ? (255 * whiteA) / a : 0;
+      if (a <= 0) continue;
       const i = (row * w + col) * 4;
-      data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, (c + 0.5) | 0));
+      data[i] = Math.max(0, Math.min(255, ((whiteRgb[0] * whiteA + darkRgb[0] * darkA * (1 - whiteA)) / a + 0.5) | 0));
+      data[i + 1] = Math.max(0, Math.min(255, ((whiteRgb[1] * whiteA + darkRgb[1] * darkA * (1 - whiteA)) / a + 0.5) | 0));
+      data[i + 2] = Math.max(0, Math.min(255, ((whiteRgb[2] * whiteA + darkRgb[2] * darkA * (1 - whiteA)) / a + 0.5) | 0));
       data[i + 3] = Math.max(0, Math.min(255, (a * 255 + 0.5) | 0));
     }
   }
@@ -462,7 +567,12 @@ function buildControls() {
       state[s.key] = parseFloat(input.value);
       val.textContent = fmt(s, state[s.key]);
       paintTrack(input, s);
-      if (s.key === "edgeHighlight" || s.key === "specularAngle") {
+      if (
+        s.key === "edgeHighlight" ||
+        s.key === "rimPickup" ||
+        s.key === "pickupDistance" ||
+        s.key === "specularAngle"
+      ) {
         // Top spectacle layer only. Do not touch the SVG filter/id/hrefs — this
         // avoids bringing Safari filter flicker back while tuning the rim.
         drawRimLayer(2 * state.width, 2 * state.height);
@@ -520,6 +630,7 @@ function applyTheme(theme, redraw = true) {
   document.body.classList.toggle("dark", darkMode);
   const label = document.querySelector("[data-theme-label]");
   if (label) label.textContent = darkMode ? "Light" : "Dark";
+  updateSceneSample(true);
   if (redraw) {
     updateGlass();
   }
