@@ -47,7 +47,6 @@ const state = {
 let darkMode = false;
 let mapUrl = "";
 let maskUrl = "";
-let specUrl = "";
 let stageRect = { w: 0, h: 0 };
 
 const ua = navigator.userAgent;
@@ -57,6 +56,7 @@ const stageEl = document.getElementById("stage");
 const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
 const lensOutlineEl = document.getElementById("lensOutline");
+const rimCanvasEl = document.getElementById("rimCanvas");
 const lensContentEl = document.getElementById("lensContent");
 const mapStageEl = document.getElementById("mapStage");
 const mapImg = document.getElementById("mapBlob");
@@ -65,8 +65,6 @@ const controlsEl = document.getElementById("controls");
 const filterEl = document.getElementById(FILTER_BASE_ID);
 const feMap = document.getElementById("feMap");
 const feRoundMask = document.getElementById("feRoundMask");
-const feSpecMap = document.getElementById("feSpecMap");
-const feWhiteRimGain = document.getElementById("feWhiteRimGain");
 const feSourceBlur = document.getElementById("feSourceBlur");
 const feFinalBlur = document.getElementById("feFinalBlur");
 const feDispR = document.getElementById("feDispR");
@@ -75,7 +73,6 @@ const feDispB = document.getElementById("feDispB");
 
 const mapCanvas = document.createElement("canvas");
 const maskCanvas = document.createElement("canvas");
-const specCanvas = document.createElement("canvas");
 
 function setHref(el, href) {
   el.setAttribute("href", href);
@@ -176,71 +173,6 @@ function generateRoundMask(canvas) {
   return canvas;
 }
 
-function generateRimSpecMap(canvas) {
-  const size = MAP_SIZE;
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
-  const img = ctx.createImageData(size, size);
-  const data = img.data;
-  const hw = state.width;
-  const hh = state.height;
-  const r = Math.min(state.borderRadius, Math.min(hw, hh));
-  const pxW = (2 * hw) / size;
-  const pxH = (2 * hh) / size;
-  const strength = Math.max(0, Math.min(1, state.edgeHighlight));
-  const angle = (state.specularAngle * Math.PI) / 180;
-  // Bevel axes. Liquid Glass reads less like one directional highlight and
-  // more like a paired/quadrupole rim response: white appears on TWO opposite
-  // sides along the light axis, while dark appears on TWO opposite sides along
-  // the perpendicular axis. The angle rotates that whole cross.
-  const lx = -Math.cos(angle);
-  const ly = -Math.sin(angle);
-  const px = -ly;
-  const py = lx;
-  // Keep the bevel crisp, especially on light backgrounds: the dark outer band
-  // should read as a narrow shadow edge, not a soft gray stroke.
-  const darkWidth = 1.25;
-  const whiteStart = 0.25;
-  const whiteWidth = 0.55;
-  for (let row = 0; row < size; row++) {
-    const y = (row + 0.5) * pxH - hh;
-    for (let col = 0; col < size; col++) {
-      const x = (col + 0.5) * pxW - hw;
-      const sdf = roundedRectSdf(x, y, hw, hh, r);
-      const d = Math.max(0, -sdf); // distance inward from outer edge
-      const n = roundedRectNormal(x, y, hw, hh, r);
-      const alongLight = Math.abs(n.x * lx + n.y * ly);
-      const alongPerp = Math.abs(n.x * px + n.y * py);
-
-      // Dark bevel: broad at the outside edge, decays inward, strongest on the
-      // two sides perpendicular to the light axis.
-      const darkBand = Math.max(0, 1 - d / darkWidth);
-      // White glint: offset inward and much thinner, strongest on the two sides
-      // aligned with the light axis. Because both are two-lobed and offset in
-      // depth, they cross/overlap through the rounded corners.
-      const w = 1 - Math.abs(d - whiteStart) / whiteWidth;
-      const whiteBand = Math.max(0, w);
-
-      // Light mode needs a much brighter white rim; screen blending barely
-      // moves pixels that are already pale. Boost the generated alpha there,
-      // while keeping the dark bevel a bit quieter so the edge stays glassy.
-      const whiteBoost = darkMode ? 1.0 : 2.6;
-      const darkBoost = darkMode ? 0.55 : 0.28;
-      const white = strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.35);
-      const dark = strength * darkBoost * darkBand * Math.pow(alongPerp, 1.2);
-      const i = (row * size + col) * 4;
-      data[i] = Math.max(0, Math.min(255, (white * 255 + 0.5) | 0));
-      data[i + 1] = Math.max(0, Math.min(255, (dark * 255 + 0.5) | 0));
-      data[i + 2] = 0;
-      data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  return canvas;
-}
-
 // ── displacement map regeneration ────────────────────────────────────────
 function regenMap() {
   generateDisplacementMap(mapCanvas, {
@@ -265,15 +197,12 @@ function regenMap() {
   });
 
   generateRoundMask(maskCanvas);
-  generateRimSpecMap(specCanvas);
 
   mapUrl = mapCanvas.toDataURL("image/png");
   maskUrl = maskCanvas.toDataURL("image/png");
-  specUrl = specCanvas.toDataURL("image/png");
   mapImg.src = mapUrl;
   applyDeferredHref(feMap, mapUrl, "map");
   applyDeferredHref(feRoundMask, maskUrl, "mask");
-  applyDeferredHref(feSpecMap, specUrl, "spec");
 }
 
 // Aave's flicker fix (reverse-engineered): the synchronous filter-id bump that
@@ -286,7 +215,6 @@ function regenMap() {
 const deferredHrefs = {
   map: { hasHref: false, pendingUrl: null, timer: 0 },
   mask: { hasHref: false, pendingUrl: null, timer: 0 },
-  spec: { hasHref: false, pendingUrl: null, timer: 0 },
 };
 function applyDeferredHref(el, url, key) {
   const slot = deferredHrefs[key];
@@ -309,6 +237,74 @@ function applyDeferredHref(el, url, key) {
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
+function drawRimLayer(fullW, fullH) {
+  const strength = Math.max(0, Math.min(1, state.edgeHighlight));
+  const pad = 6;
+  const cssW = Math.ceil(fullW + 2 * pad);
+  const cssH = Math.ceil(fullH + 2 * pad);
+  rimCanvasEl.style.left = `${-pad}px`;
+  rimCanvasEl.style.top = `${-pad}px`;
+  rimCanvasEl.style.width = `${cssW}px`;
+  rimCanvasEl.style.height = `${cssH}px`;
+
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, Math.round(cssW * dpr));
+  const h = Math.max(1, Math.round(cssH * dpr));
+  if (rimCanvasEl.width !== w) rimCanvasEl.width = w;
+  if (rimCanvasEl.height !== h) rimCanvasEl.height = h;
+
+  const ctx = rimCanvasEl.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, w, h);
+  if (strength <= 0) return;
+
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+  const hw = fullW / 2;
+  const hh = fullH / 2;
+  const r = Math.min(state.borderRadius, Math.min(hw, hh));
+  const angle = (state.specularAngle * Math.PI) / 180;
+  const lx = -Math.cos(angle);
+  const ly = -Math.sin(angle);
+  const px = -ly;
+  const py = lx;
+
+  // Outside dark bevel, inside white glint. Both are deliberately very narrow
+  // and live in this top canvas layer, so changing the spectacle never mutates
+  // SVG filter feImages and should not reintroduce Safari filter flicker.
+  const darkCenter = 0.45; // positive SDF = outside the glass body
+  const darkWidth = 1.0;
+  const whiteCenter = -0.22; // negative SDF = just inside the body
+  const whiteWidth = 0.55;
+  const whiteBoost = darkMode ? 0.85 : 2.35;
+  const darkBoost = darkMode ? 0.46 : 0.22;
+
+  for (let row = 0; row < h; row++) {
+    const y = (row + 0.5) / dpr - pad - hh;
+    for (let col = 0; col < w; col++) {
+      const x = (col + 0.5) / dpr - pad - hw;
+      const sdf = roundedRectSdf(x, y, hw, hh, r);
+      if (sdf < -2 || sdf > 2.4) continue;
+      const n = roundedRectNormal(x, y, hw, hh, r);
+      const alongLight = Math.abs(n.x * lx + n.y * ly);
+      const alongPerp = Math.abs(n.x * px + n.y * py);
+      const whiteBand = Math.max(0, 1 - Math.abs(sdf - whiteCenter) / whiteWidth);
+      const darkBand = Math.max(0, 1 - Math.abs(sdf - darkCenter) / darkWidth);
+      const whiteA = Math.min(1, strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.25));
+      const darkA = Math.min(1, strength * darkBoost * darkBand * Math.pow(alongPerp, 1.15));
+      if (whiteA <= 0 && darkA <= 0) continue;
+
+      // Composite dark first, then white, into a single source-over overlay.
+      const a = whiteA + darkA * (1 - whiteA);
+      const c = a > 0 ? (255 * whiteA) / a : 0;
+      const i = (row * w + col) * 4;
+      data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, (c + 0.5) | 0));
+      data[i + 3] = Math.max(0, Math.min(255, (a * 255 + 0.5) | 0));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
 function updateFilterPrimitives(fullW, fullH) {
   // Safari is much more reliable when the filter region is the lens bbox and
   // the displacement map fills that bbox. The underlying source is aligned by
@@ -331,10 +327,6 @@ function updateFilterPrimitives(fullW, fullH) {
   feRoundMask.setAttribute("y", mapY);
   feRoundMask.setAttribute("width", mapW);
   feRoundMask.setAttribute("height", mapH);
-  feSpecMap.setAttribute("x", mapX);
-  feSpecMap.setAttribute("y", mapY);
-  feSpecMap.setAttribute("width", mapW);
-  feSpecMap.setAttribute("height", mapH);
 
   // Clip the lens-producing primitives to the lens rect (Aave's `data-lens`
   // subregion). This is what makes the hole-and-fill work: the displacement
@@ -391,11 +383,6 @@ function updateFilterPrimitives(fullW, fullH) {
     );
   }
 
-  // Extra alpha gain on the white rim in light mode. This makes the glint read
-  // as white on bright backgrounds instead of dissolving into the frost.
-  if (feWhiteRimGain) {
-    feWhiteRimGain.setAttribute("slope", darkMode ? "1" : "2.1");
-  }
 }
 
 function render() {
@@ -409,8 +396,9 @@ function render() {
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
-  // Blank slate shell: no CSS border/sheen/streak. The only visible edge
-  // treatment is the in-filter material rim driven by the map's blue channel.
+  // Blank slate shell: no CSS border/sheen/streak. The edge spectacle is a
+  // separate top canvas layer: dark outside the body, white just inside it.
+  drawRimLayer(fullW, fullH);
 
   // The separate lens layer is unused; Aave's playground applies the SVG
   // filter to the full content scene and clips the output with lens-region
@@ -474,6 +462,12 @@ function buildControls() {
       state[s.key] = parseFloat(input.value);
       val.textContent = fmt(s, state[s.key]);
       paintTrack(input, s);
+      if (s.key === "edgeHighlight" || s.key === "specularAngle") {
+        // Top spectacle layer only. Do not touch the SVG filter/id/hrefs — this
+        // avoids bringing Safari filter flicker back while tuning the rim.
+        drawRimLayer(2 * state.width, 2 * state.height);
+        return;
+      }
       const mapKeys = [
         "width",
         "height",
@@ -481,8 +475,6 @@ function buildControls() {
         "depth",
         "curvature",
         "splay",
-        "edgeHighlight",
-        "specularAngle",
       ];
       updateGlass({ map: mapKeys.includes(s.key) });
     });

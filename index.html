@@ -114,6 +114,10 @@
            .lensOutline { box-shadow: 0 0 0 1px rgba(255,255,255,0.18); }
       */
       .lensOutline { box-shadow: none; }
+      .rimCanvas {
+        position: absolute;
+        pointer-events: none;
+      }
       .lensContent {
         transform-origin: top left;
       }
@@ -289,24 +293,7 @@
                   <feColorMatrix in="roundMaskRGB" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0" result="roundMask" />
                   <feComposite in="blendedSmooth" in2="roundMask" operator="in" result="lensResult" />
                   <feComposite in="SourceGraphic" in2="roundMask" operator="out" result="holedSG" />
-                  <feComposite in="lensResult" in2="holedSG" operator="over" result="lensOnScene" />
-                  <!-- Paired Liquid Glass bevel rim. A separate spec map encodes:
-                       RED   = inner white glint
-                       GREEN = outer dark bevel/shadow
-                       Both are the same rounded SDF edge band, split by opposite sides
-                       of the light direction, then layered as dark multiply below white
-                       screen. This creates the crossed white/dark rim seen in Liquid
-                       Glass instead of a single flat border. -->
-                  <feImage id="feSpecMap" preserveAspectRatio="none" result="specMap" />
-                  <feColorMatrix in="specMap" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 1 0 0 0" result="darkRimRaw" />
-                  <feComposite in="darkRimRaw" in2="roundMask" operator="in" result="darkRim" />
-                  <feBlend in="darkRim" in2="lensOnScene" mode="multiply" result="withDarkRim" />
-                  <feColorMatrix in="specMap" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  1 0 0 0 0" result="whiteRimRaw" />
-                  <feComponentTransfer in="whiteRimRaw" result="whiteRimGain">
-                    <feFuncA id="feWhiteRimGain" type="linear" slope="1" intercept="0" />
-                  </feComponentTransfer>
-                  <feComposite in="whiteRimGain" in2="roundMask" operator="in" result="whiteRim" />
-                  <feComposite in="whiteRim" in2="withDarkRim" operator="over" />
+                  <feComposite in="lensResult" in2="holedSG" operator="over" />
                 </filter>
               </defs>
             </svg>
@@ -315,7 +302,7 @@
               <div class="lensContent" id="lensContent"></div>
             </div>
             <!-- frostVeil removed for exact Aave parity -->
-            <div class="lensOutline" id="lensOutline"></div>
+            <div class="lensOutline" id="lensOutline"><canvas class="rimCanvas" id="rimCanvas" aria-hidden="true"></canvas></div>
           </div>
           <div class="mapStage" id="mapStage">
             <img class="mapBlob" id="mapBlob" alt="Generated displacement map at the lens position" draggable="false" />
