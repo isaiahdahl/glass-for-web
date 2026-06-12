@@ -26,6 +26,7 @@ const SLIDERS = [
   { key: "blur", label: "Blur", min: 0, max: 30, step: 0.5, dp: 1 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "rimPickup", label: "Rim Pickup", min: 0, max: 1, step: 0.01, dp: 2 },
+  { key: "surfaceShade", label: "Surface Shade", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "pickupDistance", label: "Pickup Distance", min: 0, max: 80, step: 1, dp: 0 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
 ];
@@ -42,6 +43,7 @@ const state = {
   blur: 8,
   edgeHighlight: 0.5,
   rimPickup: 0.35,
+  surfaceShade: 0.35,
   pickupDistance: 22,
   specularAngle: 90,
   posX: 0.5,
@@ -450,7 +452,10 @@ function drawRimLayer(fullW, fullH) {
       const darkLobe = Math.pow(alongPerp, darkMode ? 1.15 : 2.75);
       const darkPeak = darkMode ? 1 : 1 + 1.6 * Math.pow(alongPerp, 8);
       const darkA = Math.min(1, strength * darkBoost * darkPeak * darkBand * darkLobe);
-      const shadeA = Math.min(1, strength * 0.075 * surfaceShadeBand * (0.55 + 0.45 * alongPerp));
+      const shadeA = Math.min(
+        1,
+        strength * state.surfaceShade * 0.22 * surfaceShadeBand * (0.55 + 0.45 * alongPerp),
+      );
       if (whiteA <= 0 && darkA <= 0 && shadeA <= 0) continue;
 
       // Base bevel stays neutral and sharp.
@@ -656,6 +661,7 @@ function buildControls() {
       if (
         s.key === "edgeHighlight" ||
         s.key === "rimPickup" ||
+        s.key === "surfaceShade" ||
         s.key === "pickupDistance" ||
         s.key === "specularAngle"
       ) {
