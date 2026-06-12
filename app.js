@@ -367,8 +367,8 @@ function drawRimLayer(fullW, fullH) {
   const darkWidth = 1.0;
   const whiteCenter = -0.22; // negative SDF = just inside the body
   const whiteWidth = 0.55;
-  const whiteBoost = darkMode ? 0.85 : 2.35;
-  const darkBoost = darkMode ? 0.46 : 0.22;
+  const whiteBoost = darkMode ? 0.95 : 2.35;
+  const darkBoost = darkMode ? 0.28 : 0.18;
 
   const cx = state.posX * Math.max(1, stageRect.w);
   const cy = state.posY * Math.max(1, stageRect.h);
@@ -395,7 +395,10 @@ function drawRimLayer(fullW, fullH) {
         255 * (1 - tint) + sample[1] * tint,
         255 * (1 - tint) + sample[2] * tint,
       ];
-      const darkRgb = [sample[0] * 0.22, sample[1] * 0.22, sample[2] * 0.22];
+      // Preserve sampled hue in the outside bevel. Too much black here reads
+      // like a CSS stroke; Liquid Glass looks more like a coloured shadow edge.
+      const darken = darkMode ? 0.42 : 0.58;
+      const darkRgb = [sample[0] * darken, sample[1] * darken, sample[2] * darken];
 
       // Composite dark first, then white, into a single source-over overlay.
       const a = whiteA + darkA * (1 - whiteA);
