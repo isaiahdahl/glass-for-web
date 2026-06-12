@@ -61,6 +61,7 @@ const sceneEl = document.getElementById("scene");
 const lensLayerEl = document.getElementById("lensLayer");
 const lensOutlineEl = document.getElementById("lensOutline");
 const rimCanvasEl = document.getElementById("rimCanvas");
+const rimPickupCanvasEl = document.getElementById("rimPickupCanvas");
 const lensContentEl = document.getElementById("lensContent");
 const mapStageEl = document.getElementById("mapStage");
 const mapImg = document.getElementById("mapBlob");
@@ -310,19 +311,54 @@ function sampleSceneColor(x, y) {
   return [sceneSampleData[i], sceneSampleData[i + 1], sceneSampleData[i + 2]];
 }
 
+function saturatePickupColor([r, g, b]) {
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const sat = darkMode ? 2.35 : 1.85;
+  const lift = darkMode ? 1.42 : 1.22;
+  r = lum + (r - lum) * sat;
+  g = lum + (g - lum) * sat;
+  b = lum + (b - lum) * sat;
+  return [
+    Math.max(0, Math.min(255, r * lift)),
+    Math.max(0, Math.min(255, g * lift)),
+    Math.max(0, Math.min(255, b * lift)),
+  ];
+}
+
 function sampleRimPickup(stageX, stageY, nx, ny) {
   const pickup = Math.max(0, Math.min(1, state.rimPickup));
-  if (pickup <= 0) return darkMode ? [255, 255, 255] : [255, 255, 255];
+  if (pickup <= 0) return [255, 255, 255];
   const d = state.pickupDistance;
-  // Average a short ray outside the rim so nearby coloured UI influences the
-  // spectacle without becoming a noisy per-pixel copy of the background.
-  const distances = [Math.max(0, d - 10), d, d + 14];
-  let r = 0, g = 0, b = 0;
+  const tx = -ny;
+  const ty = nx;
+  // Bright blurred environmental sample. We average a small patch outside the
+  // rim (several distances along the normal, several offsets along the tangent)
+  // so a nearby coloured element still influences the rim even if it is ~10px
+  // away instead of exactly under the sample point.
+  const distances = [Math.max(0, d - 8), d, d + 10, d + 22];
+  const offsets = [-18, -9, 0, 9, 18];
+  let r = 0, g = 0, b = 0, weightSum = 0;
   for (const dist of distances) {
-    const c = sampleSceneColor(stageX + nx * dist, stageY + ny * dist);
-    r += c[0]; g += c[1]; b += c[2];
+    const dw = dist === d ? 1.4 : 1;
+    for (const off of offsets) {
+      const ow = off === 0 ? 1.25 : off === -9 || off === 9 ? 1 : 0.65;
+      const weight = dw * ow;
+      const c = sampleSceneColor(stageX + nx * dist + tx * off, stageY + ny * dist + ty * off);
+      r += c[0] * weight; g += c[1] * weight; b += c[2] * weight;
+      weightSum += weight;
+    }
   }
-  return [r / distances.length, g / distances.length, b / distances.length];
+  r /= weightSum; g /= weightSum; b /= weightSum;
+  // Lift/saturate the picked colour slightly so it reads as luminous glass
+  // pickup rather than a muddy average.
+  const max = Math.max(r, g, b);
+  const lift = darkMode ? 1.18 : 1.08;
+  if (max > 0) {
+    r = Math.min(255, r * lift);
+    g = Math.min(255, g * lift);
+    b = Math.min(255, b * lift);
+  }
+  return [r, g, b];
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -333,24 +369,32 @@ function drawRimLayer(fullW, fullH) {
   const pad = Math.max(6, Math.ceil(state.pickupDistance * 0.08));
   const cssW = Math.ceil(fullW + 2 * pad);
   const cssH = Math.ceil(fullH + 2 * pad);
-  rimCanvasEl.style.left = `${-pad}px`;
-  rimCanvasEl.style.top = `${-pad}px`;
-  rimCanvasEl.style.width = `${cssW}px`;
-  rimCanvasEl.style.height = `${cssH}px`;
+  for (const canvas of [rimCanvasEl, rimPickupCanvasEl]) {
+    canvas.style.left = `${-pad}px`;
+    canvas.style.top = `${-pad}px`;
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+  }
 
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = Math.max(1, Math.round(cssW * dpr));
   const h = Math.max(1, Math.round(cssH * dpr));
-  if (rimCanvasEl.width !== w) rimCanvasEl.width = w;
-  if (rimCanvasEl.height !== h) rimCanvasEl.height = h;
+  for (const canvas of [rimCanvasEl, rimPickupCanvasEl]) {
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+  }
 
   const ctx = rimCanvasEl.getContext("2d");
-  if (!ctx) return;
+  const pickupCtx = rimPickupCanvasEl.getContext("2d");
+  if (!ctx || !pickupCtx) return;
   ctx.clearRect(0, 0, w, h);
+  pickupCtx.clearRect(0, 0, w, h);
   if (strength <= 0) return;
 
   const img = ctx.createImageData(w, h);
   const data = img.data;
+  const pickupImg = pickupCtx.createImageData(w, h);
+  const pickupData = pickupImg.data;
   const hw = fullW / 2;
   const hh = fullH / 2;
   const r = Math.min(state.borderRadius, Math.min(hw, hh));
@@ -388,19 +432,11 @@ function drawRimLayer(fullW, fullH) {
       const darkA = Math.min(1, strength * darkBoost * darkBand * Math.pow(alongPerp, 1.15));
       if (whiteA <= 0 && darkA <= 0) continue;
 
-      const sample = sampleRimPickup(cx + x, cy + y, n.x, n.y);
-      const tint = pickup * (darkMode ? 0.42 : 0.55);
-      const whiteRgb = [
-        255 * (1 - tint) + sample[0] * tint,
-        255 * (1 - tint) + sample[1] * tint,
-        255 * (1 - tint) + sample[2] * tint,
-      ];
-      // Preserve sampled hue in the outside bevel. Too much black here reads
-      // like a CSS stroke; Liquid Glass looks more like a coloured shadow edge.
-      const darken = darkMode ? 0.42 : 0.58;
-      const darkRgb = [sample[0] * darken, sample[1] * darken, sample[2] * darken];
+      // Base bevel stays neutral and sharp.
+      const whiteRgb = [255, 255, 255];
+      const darkRgb = darkMode ? [12, 11, 18] : [96, 92, 116];
 
-      // Composite dark first, then white, into a single source-over overlay.
+      // Composite dark first, then white, into a single source-over neutral rim.
       const a = whiteA + darkA * (1 - whiteA);
       if (a <= 0) continue;
       const i = (row * w + col) * 4;
@@ -408,9 +444,25 @@ function drawRimLayer(fullW, fullH) {
       data[i + 1] = Math.max(0, Math.min(255, ((whiteRgb[1] * whiteA + darkRgb[1] * darkA * (1 - whiteA)) / a + 0.5) | 0));
       data[i + 2] = Math.max(0, Math.min(255, ((whiteRgb[2] * whiteA + darkRgb[2] * darkA * (1 - whiteA)) / a + 0.5) | 0));
       data[i + 3] = Math.max(0, Math.min(255, (a * 255 + 0.5) | 0));
+
+      // Separate luminous colour-pickup layer above the neutral bevel. This is
+      // intentionally brighter and more saturated, then CSS-screened over the
+      // glass so nearby cyan/orange/green blooms read like environmental pickup.
+      if (pickup > 0) {
+        const sample = saturatePickupColor(sampleRimPickup(cx + x, cy + y, n.x, n.y));
+        const pickupBand = Math.max(whiteBand * Math.pow(alongLight, 0.9), darkBand * 0.7 * Math.pow(alongPerp, 0.95));
+        const pickupA = Math.min(1, strength * pickup * (darkMode ? 0.95 : 0.72) * pickupBand);
+        if (pickupA > 0) {
+          pickupData[i] = Math.max(0, Math.min(255, (sample[0] + 0.5) | 0));
+          pickupData[i + 1] = Math.max(0, Math.min(255, (sample[1] + 0.5) | 0));
+          pickupData[i + 2] = Math.max(0, Math.min(255, (sample[2] + 0.5) | 0));
+          pickupData[i + 3] = Math.max(0, Math.min(255, (pickupA * 255 + 0.5) | 0));
+        }
+      }
     }
   }
   ctx.putImageData(img, 0, 0);
+  pickupCtx.putImageData(pickupImg, 0, 0);
 }
 
 function updateFilterPrimitives(fullW, fullH) {
