@@ -313,8 +313,8 @@ function sampleSceneColor(x, y) {
 
 function saturatePickupColor([r, g, b]) {
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const sat = darkMode ? 2.35 : 1.85;
-  const lift = darkMode ? 1.42 : 1.22;
+  const sat = darkMode ? 2.35 : 2.7;
+  const lift = darkMode ? 1.42 : 1.55;
   r = lum + (r - lum) * sat;
   g = lum + (g - lum) * sat;
   b = lum + (b - lum) * sat;
@@ -338,6 +338,8 @@ function sampleRimPickup(stageX, stageY, nx, ny) {
   const distances = [Math.max(0, d - 8), d, d + 10, d + 22];
   const offsets = [-18, -9, 0, 9, 18];
   let r = 0, g = 0, b = 0, weightSum = 0;
+  let best = [255, 255, 255];
+  let bestScore = -1;
   for (const dist of distances) {
     const dw = dist === d ? 1.4 : 1;
     for (const off of offsets) {
@@ -346,19 +348,28 @@ function sampleRimPickup(stageX, stageY, nx, ny) {
       const c = sampleSceneColor(stageX + nx * dist + tx * off, stageY + ny * dist + ty * off);
       r += c[0] * weight; g += c[1] * weight; b += c[2] * weight;
       weightSum += weight;
+
+      // Reflections tend to catch the brightest/saturated nearby object, not a
+      // flat average of object + pale background. Bias toward the most colourful
+      // sample in the patch, which is what makes the cyan capsule influence the
+      // rim even when surrounded by light background.
+      const hi = Math.max(c[0], c[1], c[2]);
+      const lo = Math.min(c[0], c[1], c[2]);
+      const chroma = hi - lo;
+      const score = chroma * 1.8 + hi * 0.35;
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
     }
   }
   r /= weightSum; g /= weightSum; b /= weightSum;
-  // Lift/saturate the picked colour slightly so it reads as luminous glass
-  // pickup rather than a muddy average.
-  const max = Math.max(r, g, b);
-  const lift = darkMode ? 1.18 : 1.08;
-  if (max > 0) {
-    r = Math.min(255, r * lift);
-    g = Math.min(255, g * lift);
-    b = Math.min(255, b * lift);
-  }
-  return [r, g, b];
+  const bias = darkMode ? 0.55 : 0.78;
+  return [
+    r * (1 - bias) + best[0] * bias,
+    g * (1 - bias) + best[1] * bias,
+    b * (1 - bias) + best[2] * bias,
+  ];
 }
 
 // ── SVG filter parameter updates ─────────────────────────────────────────
@@ -450,8 +461,14 @@ function drawRimLayer(fullW, fullH) {
       // glass so nearby cyan/orange/green blooms read like environmental pickup.
       if (pickup > 0) {
         const sample = saturatePickupColor(sampleRimPickup(cx + x, cy + y, n.x, n.y));
-        const pickupBand = Math.max(whiteBand * Math.pow(alongLight, 0.9), darkBand * 0.7 * Math.pow(alongPerp, 0.95));
-        const pickupA = Math.min(1, strength * pickup * (darkMode ? 0.95 : 0.72) * pickupBand);
+        // Colour pickup is its own luminous INNER layer. Do not paint it over
+        // the outer dark bevel; otherwise max pickup washes out the shadow edge
+        // that gives the glass thickness.
+        const innerPickupCenter = -0.55;
+        const innerPickupWidth = 1.15;
+        const innerPickupBand = Math.max(0, 1 - Math.abs(sdf - innerPickupCenter) / innerPickupWidth);
+        const pickupBand = innerPickupBand * Math.max(0.25, Math.pow(alongLight, 0.75));
+        const pickupA = Math.min(1, strength * pickup * (darkMode ? 0.85 : 0.78) * pickupBand);
         if (pickupA > 0) {
           pickupData[i] = Math.max(0, Math.min(255, (sample[0] + 0.5) | 0));
           pickupData[i + 1] = Math.max(0, Math.min(255, (sample[1] + 0.5) | 0));
