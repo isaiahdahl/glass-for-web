@@ -26,7 +26,7 @@ const SLIDERS = [
   { key: "blur", label: "Blur", min: 0, max: 30, step: 0.5, dp: 1 },
   { key: "edgeHighlight", label: "Edge Highlight", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "rimPickup", label: "Rim Pickup", min: 0, max: 1, step: 0.01, dp: 2 },
-  { key: "surfaceShade", label: "Surface Shade", min: 0, max: 1, step: 0.01, dp: 2 },
+  { key: "elementShadow", label: "Element Shadow", min: 0, max: 1, step: 0.01, dp: 2 },
   { key: "pickupDistance", label: "Pickup Distance", min: 0, max: 80, step: 1, dp: 0 },
   { key: "specularAngle", label: "Specular Angle", min: 0, max: 180, step: 1, dp: 0 },
 ];
@@ -43,7 +43,7 @@ const state = {
   blur: 8,
   edgeHighlight: 0.5,
   rimPickup: 0.35,
-  surfaceShade: 0.35,
+  elementShadow: 0.35,
   pickupDistance: 22,
   specularAngle: 90,
   posX: 0.5,
@@ -422,10 +422,6 @@ function drawRimLayer(fullW, fullH) {
   // SVG filter feImages and should not reintroduce Safari filter flicker.
   const darkCenter = 0.45; // positive SDF = outside the glass body
   const darkWidth = darkMode ? 1.0 : 0.82;
-  // Light mode gets a subtle inner surface shade just inside the rim. It makes
-  // the white glint pop without relying on an overly harsh black outside edge.
-  const surfaceShadeCenter = -1.6;
-  const surfaceShadeWidth = 3.2;
   const whiteCenter = -0.22; // negative SDF = just inside the body
   const whiteWidth = 0.55;
   const whiteBoost = darkMode ? 0.95 : 2.65;
@@ -445,34 +441,25 @@ function drawRimLayer(fullW, fullH) {
       const alongPerp = Math.abs(n.x * px + n.y * py);
       const whiteBand = Math.max(0, 1 - Math.abs(sdf - whiteCenter) / whiteWidth);
       const darkBand = Math.max(0, 1 - Math.abs(sdf - darkCenter) / darkWidth);
-      const surfaceShadeBand = !darkMode && sdf < 0
-        ? Math.max(0, 1 - Math.abs(sdf - surfaceShadeCenter) / surfaceShadeWidth)
-        : 0;
       const whiteA = Math.min(1, strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.18));
       const darkLobe = Math.pow(alongPerp, darkMode ? 1.15 : 2.75);
       const darkPeak = darkMode ? 1 : 1 + 1.6 * Math.pow(alongPerp, 8);
       const darkA = Math.min(1, strength * darkBoost * darkPeak * darkBand * darkLobe);
-      const shadeA = Math.min(
-        1,
-        strength * state.surfaceShade * 0.22 * surfaceShadeBand * (0.55 + 0.45 * alongPerp),
-      );
-      if (whiteA <= 0 && darkA <= 0 && shadeA <= 0) continue;
+      if (whiteA <= 0 && darkA <= 0) continue;
 
       // Base bevel stays neutral and sharp.
       const whiteRgb = [255, 255, 255];
       const darkRgb = darkMode ? [12, 11, 18] : [54, 50, 76];
-      const shadeRgb = [120, 112, 150];
 
       // Composite dark first, then white, into a single source-over neutral rim.
-      const aShade = shadeA;
-      const aDark = darkA * (1 - aShade);
-      const aWhite = whiteA * (1 - aShade) * (1 - aDark);
-      const a = aShade + aDark + aWhite;
+      const aDark = darkA;
+      const aWhite = whiteA * (1 - aDark);
+      const a = aDark + aWhite;
       if (a <= 0) continue;
       const i = (row * w + col) * 4;
-      data[i] = Math.max(0, Math.min(255, ((shadeRgb[0] * aShade + darkRgb[0] * aDark + whiteRgb[0] * aWhite) / a + 0.5) | 0));
-      data[i + 1] = Math.max(0, Math.min(255, ((shadeRgb[1] * aShade + darkRgb[1] * aDark + whiteRgb[1] * aWhite) / a + 0.5) | 0));
-      data[i + 2] = Math.max(0, Math.min(255, ((shadeRgb[2] * aShade + darkRgb[2] * aDark + whiteRgb[2] * aWhite) / a + 0.5) | 0));
+      data[i] = Math.max(0, Math.min(255, ((darkRgb[0] * aDark + whiteRgb[0] * aWhite) / a + 0.5) | 0));
+      data[i + 1] = Math.max(0, Math.min(255, ((darkRgb[1] * aDark + whiteRgb[1] * aWhite) / a + 0.5) | 0));
+      data[i + 2] = Math.max(0, Math.min(255, ((darkRgb[2] * aDark + whiteRgb[2] * aWhite) / a + 0.5) | 0));
       data[i + 3] = Math.max(0, Math.min(255, (a * 255 + 0.5) | 0));
 
       // Separate luminous colour-pickup layer above the neutral bevel. This is
@@ -592,6 +579,15 @@ function render() {
   lensOutlineEl.style.height = `${fullH}px`;
   lensOutlineEl.style.borderRadius = `${state.borderRadius}px`;
   lensOutlineEl.style.transform = `translate(${x}px, ${y}px)`;
+  const shadow = Math.max(0, Math.min(1, state.elementShadow));
+  if (shadow > 0) {
+    const opacity = darkMode ? 0.32 * shadow : 0.34 * shadow;
+    const blur = (darkMode ? 18 : 22) * shadow;
+    const yOff = (darkMode ? 8 : 9) * shadow;
+    lensOutlineEl.style.filter = `drop-shadow(0 ${yOff.toFixed(1)}px ${blur.toFixed(1)}px rgba(0,0,0,${opacity.toFixed(3)}))`;
+  } else {
+    lensOutlineEl.style.filter = "none";
+  }
   // Blank slate shell: no CSS border/sheen/streak. The edge spectacle is a
   // separate top canvas layer: dark outside the body, white just inside it.
   drawRimLayer(fullW, fullH);
@@ -661,7 +657,7 @@ function buildControls() {
       if (
         s.key === "edgeHighlight" ||
         s.key === "rimPickup" ||
-        s.key === "surfaceShade" ||
+        s.key === "elementShadow" ||
         s.key === "pickupDistance" ||
         s.key === "specularAngle"
       ) {
