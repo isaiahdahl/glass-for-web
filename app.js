@@ -419,11 +419,11 @@ function drawRimLayer(fullW, fullH) {
   // and live in this top canvas layer, so changing the spectacle never mutates
   // SVG filter feImages and should not reintroduce Safari filter flicker.
   const darkCenter = 0.45; // positive SDF = outside the glass body
-  const darkWidth = 1.0;
+  const darkWidth = darkMode ? 1.0 : 0.82;
   const whiteCenter = -0.22; // negative SDF = just inside the body
   const whiteWidth = 0.55;
   const whiteBoost = darkMode ? 0.95 : 2.35;
-  const darkBoost = darkMode ? 0.28 : 0.18;
+  const darkBoost = darkMode ? 0.28 : 0.3;
 
   const cx = state.posX * Math.max(1, stageRect.w);
   const cy = state.posY * Math.max(1, stageRect.h);
@@ -440,12 +440,14 @@ function drawRimLayer(fullW, fullH) {
       const whiteBand = Math.max(0, 1 - Math.abs(sdf - whiteCenter) / whiteWidth);
       const darkBand = Math.max(0, 1 - Math.abs(sdf - darkCenter) / darkWidth);
       const whiteA = Math.min(1, strength * whiteBoost * whiteBand * Math.pow(alongLight, 1.25));
-      const darkA = Math.min(1, strength * darkBoost * darkBand * Math.pow(alongPerp, 1.15));
+      const darkLobe = Math.pow(alongPerp, darkMode ? 1.15 : 3.0);
+      const darkPeak = darkMode ? 1 : 1 + 2.6 * Math.pow(alongPerp, 8);
+      const darkA = Math.min(1, strength * darkBoost * darkPeak * darkBand * darkLobe);
       if (whiteA <= 0 && darkA <= 0) continue;
 
       // Base bevel stays neutral and sharp.
       const whiteRgb = [255, 255, 255];
-      const darkRgb = darkMode ? [12, 11, 18] : [96, 92, 116];
+      const darkRgb = darkMode ? [12, 11, 18] : [22, 20, 36];
 
       // Composite dark first, then white, into a single source-over neutral rim.
       const a = whiteA + darkA * (1 - whiteA);
